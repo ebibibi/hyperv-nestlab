@@ -30,7 +30,9 @@ param(
     [switch] $DryRun,
     [securestring] $VaultPassword,
     [string] $Secrets = "secrets.yml",
-    [string] $BuildDir = "build"
+    [string] $BuildDir = "build",
+    # golden に焼く L1/L2 ローカル管理者パスワード。L1/L2 への PowerShell Direct にも使う。
+    [string] $GoldenAdminPassword = "P@ssw0rd-Lab-Change!"
 )
 
 $ErrorActionPreference = "Stop"
@@ -147,7 +149,8 @@ if ($need.Keys -contains "win2025-golden.vhdx" -and -not (Test-Path (Join-Path $
     # ISO 配置をガイド + 配置されるまで待機・検証 (原則① の唯一の手動ステップ)
     & (Join-Path $RepoRoot "scripts\Wait-WindowsIso.ps1") -RepoRoot $RepoRoot
     if ($LASTEXITCODE -ne 0) { Fail "Windows Server 2025 ISO が未配置です。上のガイドに従い assets\iso\ に ISO を置いて再実行してください。" }
-    & (Join-Path $RepoRoot "scripts\Build-WindowsGolden.ps1") -RepoRoot $RepoRoot
+    # DISM 標準ツールで golden を生成 (oscdimg/ADK 不要 = 原則①)。
+    & (Join-Path $RepoRoot "scripts\Build-WindowsGoldenDism.ps1") -AdminPassword $GoldenAdminPassword
     $rc = $LASTEXITCODE
     if ($rc -eq 3) { Fail "Windows ISO 未配置のため中断しました。assets\iso\ に ISO を置いて再実行してください。" }
     if ($rc -ne 0) { Fail "Windows golden イメージのビルドに失敗しました。" }
@@ -183,13 +186,53 @@ Write-Step "本線疎通確認: 制御 VM -> WinRM -> ホスト Hyper-V"
 if ($LASTEXITCODE -ne 0) { Fail "本線(制御 VM -> ホスト)の疎通に失敗しました。" }
 Write-Ok "本線疎通 OK"
 
-# ---------------------------------------------------------------- 5. ハンドオフ
-Write-Step "Ansible へハンドオフ (L1 -> L1ネットワーク -> L2)"
-$secretsPath = Join-Path $RepoRoot $Secrets
-if (-not (Test-Path $secretsPath)) {
-    Write-Warn2 "secrets.yml がありません。secrets.example.yml をコピーして暗号化してください。シークレットなしで続行します。"
-}
-& (Join-Path $RepoRoot "control-node\Invoke-Ansible.ps1") -RepoRoot $RepoRoot -Model $Resolved -Playbook "site.yml" -Secrets $secretsPath -VaultPassword $VaultPassword
-if ($LASTEXITCODE -ne 0) { Fail "Ansible 実行に失敗しました。" }
+# ---------------------------------------------------------------- 4e. L1 ラボストア
+Write-Step "L1 にラボストア(L:)を増設・初期化 (golden/L2 の置き場)"
+& (Join-Path $RepoRoot "scripts\Add-L1LabStore.ps1") -L1Password $GoldenAdminPassword
+if ($LASTEXITCODE -ne 0) { Fail "L1 ラボストアの構成に失敗しました。" }
+Write-Ok "ラボストア準備完了"
 
-Write-Ok "完了: 宣言した環境が構築されました。"
+# ---------------------------------------------------------------- 4f. golden を L1 へ配送
+Write-Step "golden / ベースイメージを L1 (L:\images) へ配送 (PowerShell Direct)"
+$delivery = @()
+if ($need.Keys -contains "win2025-golden.vhdx")     { $delivery += (Join-Path $assetsDir "win2025-golden.vhdx") }
+if ($need.Keys -contains "ubuntu2404-cloudimg.vhdx" -and ($model.vms | Where-Object { $_.os -match 'ubuntu|debian|linux' })) {
+    $delivery += (Join-Path $assetsDir "ubuntu2404-cloudimg.vhdx")
+}
+if ($delivery) {
+    & (Join-Path $RepoRoot "scripts\Copy-GoldenToL1.ps1") -Source $delivery -L1Password $GoldenAdminPassword
+    if ($LASTEXITCODE -ne 0) { Fail "golden の L1 配送に失敗しました。" }
+}
+Write-Ok "イメージ配送完了"
+
+# ---------------------------------------------------------------- 4g. L1 内 Hyper-V + NAT
+Write-Step "L1 内に Hyper-V 役割 + LabNAT を構成 (Ansible: setup_l1.yml)"
+& (Join-Path $RepoRoot "control-node\Invoke-Ansible.ps1") -RepoRoot $RepoRoot -Model $Resolved -Playbook "setup_l1.yml" -L1Password $GoldenAdminPassword
+if ($LASTEXITCODE -ne 0) { Fail "L1 内 Hyper-V/NAT の構成に失敗しました。" }
+Write-Ok "L1 内ネットワーク準備完了"
+
+# ---------------------------------------------------------------- 4h. Linux シード配送
+if ($model.vms | Where-Object { $_.os -match 'ubuntu|debian|linux' }) {
+    Write-Step "Linux L2 の cloud-init シードを生成し L1 へ配送"
+    & (Join-Path $RepoRoot "scripts\Publish-L2Seeds.ps1") -RepoRoot $RepoRoot -Model $Resolved -L1Password $GoldenAdminPassword
+    if ($LASTEXITCODE -ne 0) { Fail "cloud-init シードの配送に失敗しました。" }
+    Write-Ok "シード配送完了"
+}
+
+# ---------------------------------------------------------------- 5. L2 作成
+Write-Step "L1 -> L2  仮想マシン群の作成 (Ansible: create_l2.yml)"
+& (Join-Path $RepoRoot "control-node\Invoke-Ansible.ps1") -RepoRoot $RepoRoot -Model $Resolved -Playbook "create_l2.yml" -L1Password $GoldenAdminPassword
+if ($LASTEXITCODE -ne 0) { Fail "L2 VM の作成に失敗しました。" }
+Write-Ok "L2 VM 作成完了"
+
+# ---------------------------------------------------------------- 6. AD フォレスト
+if ($model.domain) {
+    Write-Step "L2 上に Active Directory フォレストを構築 (L1踏み台 PowerShell Direct)"
+    & (Join-Path $RepoRoot "scripts\Initialize-AdForest.ps1") -RepoRoot $RepoRoot -ModelPath $Resolved -L1Password $GoldenAdminPassword -GuestPassword $GoldenAdminPassword
+    if ($LASTEXITCODE -ne 0) { Fail "AD フォレストの構築に失敗しました。" }
+    Write-Ok "AD フォレスト構築完了"
+}
+
+Write-Host ""
+Write-Ok "完了: 宣言した環境が一括で構築されました (L1 -> L2 -> AD)。"
+Write-Host "  再実行すれば全工程が冪等に収束します (no-change が受け入れ条件)。" -ForegroundColor DarkGray

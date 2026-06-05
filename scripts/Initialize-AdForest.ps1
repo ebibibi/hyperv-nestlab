@@ -63,10 +63,12 @@ try {
         $localCred  = New-Object System.Management.Automation.PSCredential('Administrator',(ConvertTo-SecureString $guestPw -AsPlainText -Force))
         $domCred    = New-Object System.Management.Automation.PSCredential("$netbios\Administrator",(ConvertTo-SecureString $guestPw -AsPlainText -Force))
 
-        function Connect-Guest { param($vm,$cred,$timeoutSec=420)
+        function Connect-Guest { param($vm,$cred,$timeoutSec=900)
+            # golden の初回起動(OOBE/sysprep reseal)が終わるまで管理者パスワードが有効に
+            # ならず "資格情報が無効です" を返すため、十分長く粘って再接続する。
             $dl=(Get-Date).AddSeconds($timeoutSec)
             while((Get-Date) -lt $dl){
-                try { $s=New-PSSession -VMName $vm -Credential $cred -ErrorAction Stop; return $s } catch { Start-Sleep 8 }
+                try { $s=New-PSSession -VMName $vm -Credential $cred -ErrorAction Stop; return $s } catch { Start-Sleep 10 }
             }
             throw "guest $vm へ PS Direct 接続できませんでした (timeout)"
         }
@@ -77,15 +79,20 @@ try {
 
         # ===== DC =====
         # 既にフォレストがあるか (ドメイン admin で確認)
+        # まず DC をローカル管理者で確実に掴む (OOBE 完了待ち。最大 900s)
+        W "DC ${dcName}: 初回起動(OOBE)完了とローカル管理者ログオンを待機"
+        $probe = Connect-Guest $dcName $localCred 900
+        Remove-PSSession $probe
+        # フォレスト既存判定 (ドメイン管理者で短く試す)
         $forestExists=$false
         try {
-            $r = In-Guest $dcName $domCred { try { (Get-ADDomain).DNSRoot } catch { $null } } @() 60
+            $r = In-Guest $dcName $domCred { try { (Get-ADDomain).DNSRoot } catch { $null } } @() 20
             if ($r -eq $fqdn) { $forestExists=$true }
         } catch {}
 
-        if ($forestExists) { W "DC $dcName: フォレスト $fqdn は既に存在 -> スキップ" }
+        if ($forestExists) { W "DC ${dcName}: フォレスト $fqdn は既に存在 -> スキップ" }
         else {
-            W "DC $dcName: 静的IP($dcIp/$prefix) + 改名"
+            W "DC ${dcName}: 静的IP($dcIp/$prefix) + 改名"
             In-Guest $dcName $localCred {
                 param($ip,$gw,$pfx,$name)
                 $a = Get-NetAdapter | Where-Object Status -eq 'Up' | Select-Object -First 1
@@ -96,11 +103,11 @@ try {
                 if ($env:COMPUTERNAME -ne $name) { Rename-Computer -NewName $name -Force }
             } @($dcIp,$dcGw,$prefix,$dcName) 180
 
-            W "DC $dcName: 再起動して改名を適用"
+            W "DC ${dcName}: 再起動して改名を適用"
             In-Guest $dcName $localCred { Restart-Computer -Force } @() 120
             Start-Sleep 20
 
-            W "DC $dcName: AD DS + DNS 役割を導入しフォレスト $fqdn を作成 (昇格)"
+            W "DC ${dcName}: AD DS + DNS 役割を導入しフォレスト $fqdn を作成 (昇格)"
             In-Guest $dcName $localCred {
                 param($fqdn,$nb,$dsrm)
                 Install-WindowsFeature AD-Domain-Services,DNS -IncludeManagementTools | Out-Null
@@ -109,11 +116,11 @@ try {
                 Install-ADDSForest -DomainName $fqdn -DomainNetbiosName $nb -SafeModeAdministratorPassword $sp `
                     -InstallDns -Force -NoRebootOnCompletion -SkipPreChecks | Out-Null
             } @($fqdn,$netbios,$dsrm) 900
-            W "DC $dcName: 昇格完了。再起動"
+            W "DC ${dcName}: 昇格完了。再起動"
             In-Guest $dcName $localCred { Restart-Computer -Force } @() 120 -ErrorAction SilentlyContinue
             Start-Sleep 30
 
-            W "DC $dcName: AD サービス起動を待機"
+            W "DC ${dcName}: AD サービス起動を待機"
             $dl=(Get-Date).AddSeconds(600); $up=$false
             while((Get-Date) -lt $dl){
                 try {
@@ -123,22 +130,25 @@ try {
                 Start-Sleep 15
             }
             if (-not $up) { throw "DC $dcName のフォレストが時間内に起動しませんでした" }
-            W "DC $dcName: フォレスト $fqdn 稼働確認 OK"
+            W "DC ${dcName}: フォレスト $fqdn 稼働確認 OK"
         }
 
         # ===== メンバ =====
         $members = $memberJson | ConvertFrom-Json
         foreach($m in $members){
             $mn=$m.name; $mip=$m.ip
+            # OOBE 完了待ち
+            W "member ${mn}: 初回起動(OOBE)完了を待機"
+            $mp = Connect-Guest $mn $localCred 900; Remove-PSSession $mp
             # 参加済みか (ローカルから WMI)
             $joined=$false
             try {
                 $d = In-Guest $mn $localCred { (Get-CimInstance Win32_ComputerSystem).Domain } @() 60
                 if ($d -eq $fqdn) { $joined=$true }
             } catch {}
-            if ($joined) { W "member $mn: 既に $fqdn 参加済み -> スキップ"; continue }
+            if ($joined) { W "member ${mn}: 既に $fqdn 参加済み -> スキップ"; continue }
 
-            W "member $mn: 静的IP($mip/$prefix) + DNS($dcIp) + 改名"
+            W "member ${mn}: 静的IP($mip/$prefix) + DNS($dcIp) + 改名"
             In-Guest $mn $localCred {
                 param($ip,$gw,$pfx,$dns,$name)
                 $a = Get-NetAdapter | Where-Object Status -eq 'Up' | Select-Object -First 1
@@ -152,14 +162,14 @@ try {
             In-Guest $mn $localCred { Restart-Computer -Force } @() 120
             Start-Sleep 20
 
-            W "member $mn: DC への到達を待機"
+            W "member ${mn}: DC への到達を待機"
             In-Guest $mn $localCred {
                 param($dcIp)
                 $dl=(Get-Date).AddSeconds(300)
                 while((Get-Date) -lt $dl){ if(Test-Connection $dcIp -Count 1 -Quiet){break}; Start-Sleep 5 }
             } @($dcIp) 360
 
-            W "member $mn: ドメイン $fqdn へ参加"
+            W "member ${mn}: ドメイン $fqdn へ参加"
             In-Guest $mn $localCred {
                 param($fqdn,$nb,$pw)
                 $dc = New-Object System.Management.Automation.PSCredential("$nb\Administrator",(ConvertTo-SecureString $pw -AsPlainText -Force))
@@ -168,7 +178,7 @@ try {
             In-Guest $mn $localCred { Restart-Computer -Force } @() 120
             Start-Sleep 25
 
-            W "member $mn: 参加結果を確認"
+            W "member ${mn}: 参加結果を確認"
             $dl=(Get-Date).AddSeconds(420); $ok=$false
             while((Get-Date) -lt $dl){
                 try {
@@ -177,7 +187,7 @@ try {
                 } catch {}
                 Start-Sleep 12
             }
-            if ($ok) { W "member $mn: $fqdn 参加 確認 OK" } else { throw "member $mn の参加確認に失敗" }
+            if ($ok) { W "member ${mn}: $fqdn 参加 確認 OK" } else { throw "member $mn の参加確認に失敗" }
         }
 
         return $log

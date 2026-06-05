@@ -1,109 +1,157 @@
-# nestedhyper-v
+# hyperv-nestlab
 
-既存の Hyper-V サーバー上に **Nested Hyper-V 環境をコードで定義し、冪等・決定的に構築する**基盤。
+**宣言的・冪等な Nested Hyper-V ラボ構築基盤。**
+既存の Hyper-V サーバー 1 台さえあれば、`bootstrap.ps1` ひとつで制御 VM (Ansible 内蔵) を
+自己構築し、YAML 宣言から Nested ホスト (L1) とその中の VM 群 (L2: Windows / Linux /
+Active Directory ドメイン / クラスタ) を、どこでも同じ形で再現します。
 
-> 設計の全体像は [`plan.md`](plan.md)、宣言設定の文法は [`schema.md`](schema.md) を参照。
+> 設計の全体像は [`plan.md`](plan.md)、宣言設定の文法は [`schema.md`](schema.md)、
+> 作業メモ・ハマりどころは [`CLAUDE.md`](CLAUDE.md) を参照。
 
-## 譲れない 3 原則
+---
 
-1. **前提は Hyper-V サーバーがあること、ただそれだけ。** 制御環境・ツールは自前でブートストラップする。
-2. **どこでも一義的に同じ環境が出来上がる。** バージョン固定 + ベンダリング + オフライン耐性。
-3. **誰もが使い回せる。** エントリポイントは 1 つ、設定は宣言ファイル 2 本だけ。
+## 3 つの絶対基準
 
-## 使い方
+1. **前提は「Hyper-V サーバーがあること」だけ。** 制御環境・ツールはすべて自己ブートストラップ
+   (制御 VM、Ansible、qemu-img、cloud-init シード、golden イメージは DISM 標準ツールで生成。
+   Packer/ADK/oscdimg などの外部依存を持たない)。
+2. **どの環境でも決定論的に同じ環境になる。** 版固定 (`assets/images.yml`) + SHA256 検証 +
+   ベンダリング + 単一の宣言ファイル。再実行は冪等収束 (2 回流して no-change が受け入れ条件)。
+3. **誰でも使い回せる。** 単一エントリ `bootstrap.ps1`、ハードコードされたパス/名前なし、
+   データはリポジトリ配下に自己完結 (`data/`)、本ドキュメント同梱。
 
-```powershell
-# 1. 設定を用意 (L1 は使い回し、L2 だけ差し替える)
-#    例は l1/standard-host.yml と l2/fileserver-s2d.yml
-
-# 2. まずは DryRun で検証 + プラン + 必要イメージ確認 (VM は作られない)
-.\bootstrap.ps1 -L1 l1\standard-host.yml -L2 l2\fileserver-s2d.yml -DryRun
-
-# 3. (Windows を使う場合のみ) Server 2025 評価版 ISO を assets\iso\ に置く
-#    -> assets\iso\README.md の手順。Ubuntu は何も置かなくて OK (自動取得)。
-
-# 4. 本番実行 (golden イメージは自動整備される)
-.\bootstrap.ps1 -L1 l1\standard-host.yml -L2 l2\fileserver-s2d.yml
-```
-
-### イメージの整備（利用者の手間は最小）
-
-`bootstrap.ps1` が必要な golden イメージを自動で用意する（原則①）。
-
-| OS | 利用者の操作 | スクリプトの処理 |
-|---|---|---|
-| **Windows** | `assets\iso\` に Server 2025 評価版 ISO を 1 つ置くだけ | Packer を自動取得し Autounattend で無人ビルド → `win2025-golden.vhdx` |
-| **Ubuntu** | 何もしない | 固定 URL の cloud image (軽量・約599MB) を自動 DL + SHA256 検証 + VHDX 変換 |
-
-固定 URL・チェックサム・版は [`assets/images.yml`](assets/images.yml) で一元管理（原則②）。
-
-`-DryRun` は **検証 (JSON Schema + 意味検証) と解決 (確定モデル生成) のみ**を行い、作成される
-VM・クラスタの一覧を表示する。安全なので最初は必ずこれで確認する。
-
-## 設定ファイル
-
-| ファイル | 役割 |
-|---|---|
-| `l1/*.yml` | Nested Hyper-V ホストの定義（使い回す土台） |
-| `l2/*.yml` | 中に作る VM 群・ドメイン・クラスタ（検証ごとに差し替え） |
-| `secrets.yml` | シークレット（`secrets.example.yml` をコピーして Ansible Vault で暗号化） |
-
-L2 はパターン C（ハイブリッド）。既定値で短く書き、必要な所だけ `overrides` で低レベルまで降りられる。
-最小例:
-
-```yaml
-# l2/minimal-linux.yml
-defaults: { cpu: 2, memory_gb: 4, os: ubuntu_2404 }
-groups:
-  - name: app
-    count: 1
-    ip_from: 10.10.0.41
-```
-
-複雑な例（AD フォレスト + 2ノード S2D ファイルサーバ・クラスタ）は [`l2/fileserver-s2d.yml`](l2/fileserver-s2d.yml)。
+---
 
 ## アーキテクチャ (3 層)
 
 ```
-L0 物理 Hyper-V サーバー (唯一の前提)
- └─ bootstrap.ps1 が制御 VM を自動構築 → 以降は Ansible が担当
-     └─ L1 Nested Hyper-V ホスト (NAT 自己完結)
-         └─ L2 VM 群 (Windows / Linux / AD / クラスタ)
+L0  物理 Hyper-V ホスト  ── あなたが用意する唯一の前提
+│
+├─ 制御 VM (Ubuntu + Ansible)            CtrlNAT 10.20.0.10   ← bootstrap が自己構築
+│
+└─ L1: Nested Hyper-V ホスト VM           CtrlNAT 10.20.0.20
+     │   (静的メモリ / ExposeVirtualizationExtensions / MACスプーフィング)
+     │   ラボストア L:  ← golden / L2 VM / cloud-init シードを集約 (大容量・差分の置き場)
+     │
+     └─ LabNAT 10.10.0.0/24  (L1内NAT自己完結 — L2 は L1 の中で閉じる)
+          ├─ L2: Windows Server 2025   (golden の差分ディスクから一瞬で作成)
+          ├─ L2: Ubuntu 24.04          (cloud image の差分 + cloud-init NoCloud シード)
+          ├─ L2: dc01 (AD フォレスト)   ← 新規フォレストに昇格
+          └─ L2: mem01 …               ← ドメイン参加
 ```
 
-詳細は [`plan.md`](plan.md)。
+### 役割分担
+| 層・操作 | 実行主体 | 接続方式 |
+|---|---|---|
+| L0 操作 (NAT / L1作成 / 制御VM / golden配送 / ラボストア) | ホスト PowerShell | ローカル / PowerShell Direct |
+| L1 内部 (Hyper-V役割 / LabNAT / L2作成) | Ansible | 制御VM → WinRM → L1 |
+| L2 ゲスト内 ID (静的IP / 改名 / AD昇格・参加) | ホスト PowerShell | 二段 PowerShell Direct (L0→L1→L2) |
+
+> L2 は LabNAT 内に隔離され制御VMから直接届かないため、L1 を踏み台にする
+> (Windows=二段 PowerShell Direct / Linux=L1 から SSH)。PowerShell Direct は VMBus 経由で
+> 物理ネットワークに依存せず、再起動をまたぐ再接続も確実に扱える (原則①)。
+
+---
+
+## クイックスタート
+
+### 前提
+- Windows Server / Windows 11 等で **Hyper-V 役割が有効**であること (これだけ)。
+- Python (pyyaml + jsonschema) … 設定の検証/解決に使用。
+- Windows L2 を使う場合は **Windows Server 2025 評価版 ISO** を `assets/iso/` に配置
+  (未配置なら `bootstrap.ps1` が取得手順を案内します)。Ubuntu は自動取得で操作不要。
+
+### 実行
+```powershell
+# まず DryRun で構築プランと必要イメージだけ確認 (VM は作らない)
+.\bootstrap.ps1 -L1 l1\standard-host.yml -L2 l2\minimal-windows.yml -DryRun
+
+# 本番実行 (制御VM自己構築 → L1 → L2 → (あれば)AD まで一括・冪等)
+.\bootstrap.ps1 -L1 l1\standard-host.yml -L2 l2\ad-forest.yml
+```
+
+`bootstrap.ps1` の流れ:
+1. プリフライト (Hyper-V / Python / 設定ファイル)
+2. 検証 + 解決 (`tools/resolve.py` → `build/resolved.json`)
+3. イメージ整備 (Ubuntu 自動取得 / Windows golden を DISM で生成)
+4. L0→L1 プロビジョニング → ホスト WinRM → 制御 VM 構築 → ラボストア増設 → golden 配送
+5. L1 内 Hyper-V+LabNAT (Ansible) → L2 作成 (Ansible) → AD 構築 (PowerShell Direct)
+
+再実行すれば全工程が冪等に収束します (no-change が受け入れ条件)。
+
+---
+
+## 宣言ファイル (L1 / L2 を分離)
+
+L1 (ホスト土台) と L2 (中身) を別ファイルにし、L1 は使い回します。スキーマ詳細は
+[`schema.md`](schema.md) を参照。パターン C (ハイブリッド: 既定 + count/ip_from の糖衣 +
+overrides エスケープハッチ)。
+
+### サンプル
+| ファイル | 内容 | 状態 |
+|---|---|---|
+| `l1/standard-host.yml` | 標準 Nested ホスト (8vCPU/32GB, LabNAT 10.10.0.0/24) | ✅ |
+| `l2/minimal-windows.yml` | Windows Server 2025 を 1 台 | ✅ 実機検証 |
+| `l2/minimal-linux.yml` | Ubuntu 24.04 を 1 台 (cloud-init) | ✅ 実機検証 |
+| `l2/ad-forest.yml` | AD フォレスト dc01 + メンバ mem01 | ✅ 実機検証 |
+| `l2/fileserver-s2d.yml` | AD + 2ノード ファイルサーバクラスタ + S2D | 🚧 ロール足場 |
+
+最小の例 (`l2/minimal-windows.yml`):
+```yaml
+defaults: { cpu: 2, memory_gb: 4, os: windows_server_2025 }
+groups:
+  - { name: win, name_prefix: win, count: 1, ip_from: 10.10.0.51 }
+```
+
+---
+
+## 主要コンポーネント
+| パス | 役割 |
+|---|---|
+| `bootstrap.ps1` | 単一エントリポイント |
+| `tools/resolve.py` | L1+L2 宣言の検証 (JSON Schema + 意味検証) と確定モデルへの展開 |
+| `schema/*.schema.json` | L1/L2 の JSON Schema |
+| `scripts/Build-WindowsGoldenDism.ps1` | ISO から golden VHDX を DISM 生成 (oscdimg 不要) |
+| `scripts/Get-UbuntuImage.ps1` | Ubuntu cloud image を版固定取得 → VHDX 変換 |
+| `scripts/Invoke-HostProvision.ps1` | L0 上に L1 VM を冪等作成 |
+| `scripts/Add-L1LabStore.ps1` | L1 に大容量ラボストア(L:)を増設・初期化 |
+| `scripts/Copy-GoldenToL1.ps1` | golden/ベースを L1 へ Copy-VMFile 配送 |
+| `scripts/Publish-L2Seeds.ps1` | Linux L2 の cloud-init シードを生成・配送 |
+| `scripts/Initialize-AdForest.ps1` | L2 上に AD フォレスト構築 + ドメイン参加 |
+| `control-node/Ensure-ControlNode.ps1` | Ansible 内蔵 制御 VM を構築 |
+| `control-node/Invoke-Ansible.ps1` | 制御 VM へ同期し playbook 実行 |
+| `ansible/` | 動的インベントリ + ロール (nested_host / l1_network / l2_vm / ad / cluster_s2d / azure_local) |
+
+---
 
 ## 開発・検証
-
 ```powershell
-# resolver / スキーマのユニットテスト
-python -m pytest tests/ -q
-
-# 設定だけ検証 (CI 向け)
-python tools/resolve.py --l1 l1/standard-host.yml --l2 l2/fileserver-s2d.yml --validate-only
+python -m pytest tests/ -q                 # resolver / スキーマのユニットテスト
+python tools/resolve.py --l1 l1/standard-host.yml --l2 l2/ad-forest.yml --validate-only
 ```
 
-## ディレクトリ
+---
 
-| パス | 内容 |
-|---|---|
-| `bootstrap.ps1` | 唯一のエントリポイント |
-| `schema/` | JSON Schema（検証の正本） |
-| `tools/resolve.py` | 検証 + 展開エンジン（resolver） |
-| `control-node/` | 制御 VM の構築（自前ブートストラップ） |
-| `ansible/` | 構築ロジック（roles / playbooks / 動的インベントリ） |
-| `packer/` | golden VHDX イメージ生成 |
-| `scripts/` | Hyper-V 冪等ヘルパー |
-| `tests/` | resolver / スキーマのテスト |
+## 設計上の要点・既知のハマりどころ
+- **L2 OS ディスクは差分(ディファレンシング)ディスク**で golden/cloud image から作成。
+  一瞬で済み容量も最小 (Windows L2 は初期 ~300MB)。
+- **golden/L2 は L1 の OS ディスクではなくラボストア(L:)** に置く (OS ディスクは golden 由来で小さいため)。
+- `ansible.windows.win_powershell` の引数は文字列で渡るため、数値は必ず `[int]` 等で型付け
+  (`"4"*1GB` が文字列反復になり OutOfMemoryException になる)。
+- 統合コンポーネント名はロケール依存のため ID で特定 (日本語ホスト対応)。
+- group_vars は動的インベントリ隣接 (`ansible/inventory/group_vars/`) に置く。
+
+---
 
 ## ステータス
+- ✅ スキーマ / resolver / 検証 / DryRun プラン (pytest)
+- ✅ L0→L1 冪等プロビジョニング (nested / 静的メモリ / MAC spoof)
+- ✅ イメージ整備 (Windows=ISO→DISM golden / Ubuntu=固定URL自動DL+変換)
+- ✅ 制御ノード自動構築 + 本線疎通 (制御VM Ansible → WinRM → Hyper-V)
+- ✅ **L2: Windows Server 2025** (差分ディスク・冪等・実機検証)
+- ✅ **L2: Ubuntu 24.04** (cloud-init で hostname/静的IP/SSH・実機検証)
+- ✅ **L2: AD フォレスト + ドメイン参加** (L1踏み台 PowerShell Direct・実機検証)
+- ✅ **bootstrap.ps1 一発再現** (L1→L2→AD を一括・冪等)
+- 🚧 クラスタ + S2D (ロール足場) / Azure Local (別管理ロールで OSS ラップ) / GUI
 
-- ✅ スキーマ確定（パターン C ハイブリッド）/ resolver / 検証 / DryRun プラン（pytest 10/10）
-- ✅ L0→L1 冪等プロビジョニング（実機検証済：作成→再実行 no-change→nested/静的メモリ/MAC spoof）
-- ✅ イメージ整備フロー（Windows=ISO配置→自動ビルド / Ubuntu=固定URL自動DL+変換）
-- ✅ 制御ノード自動構築（Phase 1：実機で SSH 疎通 + 内蔵 Ansible ping=pong 実証）
-- ✅ 本線疎通（Phase 2：制御 VM の Ansible → WinRM → ホスト Hyper-V を実機貫通。win_ping ok + Get-VMHost 取得）
-- 🚧 L1 起動後の L1 内側 Ansible 実行（同経路で展開予定 / Windows golden ISO 待ち）
-- 🚧 AD（Phase 4）/ クラスタ+S2D（Phase 3-4）/ Azure Local 隔離（Phase 5）/ GUI（Phase 7）
-
-進捗の詳細は [`plan.md`](plan.md) §8 フェーズ計画を参照。
+進捗の詳細は [`plan.md`](plan.md) を参照。
