@@ -91,6 +91,16 @@ function Ensure-LabVm {
         }
         New-VM -Name $Name -MemoryStartupBytes $mem -Generation $Generation `
                -VHDPath $osDisk -SwitchName $Switch | Out-Null
+        # Gen2: ブート順をディスク優先にする。空の File エントリが先頭に来ると
+        # 黒画面で停止することがあるため、明示的にディスク→NIC の順に設定する。
+        if ($Generation -eq 2) {
+            $hd = Get-VMHardDiskDrive -VMName $Name | Select-Object -First 1
+            $na = Get-VMNetworkAdapter -VMName $Name | Select-Object -First 1
+            $order = @($hd); if ($na) { $order += $na }
+            Set-VMFirmware -VMName $Name -BootOrder $order
+            # Windows golden は MicrosoftWindows テンプレートで Secure Boot 可
+            Set-VMFirmware -VMName $Name -SecureBootTemplate MicrosoftWindows
+        }
         $changed = $true
     }
 
