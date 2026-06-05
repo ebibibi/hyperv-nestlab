@@ -31,28 +31,37 @@
         script: |
           # 型を明示しないと Ansible 経由では文字列で渡り、"4"*1GB が文字列反復になって
           # OutOfMemoryException を起こす。必ず [int] 等で受ける。
-          param([string]$Name,[int]$MemGB,[int]$Cpu,[string]$Switch,[int]$Gen,[string]$Base)
+          param([string]$Name,[int]$MemGB,[int]$Cpu,[string]$Switch,[int]$Gen,[string]$Base,[string]$Os)
           $ErrorActionPreference = 'Stop'   # 失敗を握りつぶさず確実にタスク失敗させる
           $Ansible.Changed = $false
+          $isLinux = $Os -match 'ubuntu|debian|linux|rocky|alma'
           if (-not (Get-VM -Name $Name -ErrorAction SilentlyContinue)) {
             $dir = Join-Path (Get-VMHost).VirtualHardDiskPath $Name
             New-Item -ItemType Directory -Force -Path $dir | Out-Null
             $osDisk = Join-Path $dir "$Name-os.vhdx"
-            # golden を丸ごとコピーせず差分(ディファレンシング)ディスクで作る。
-            # 一瞬で済み容量も最小。golden(親)は読み取り専用で共有される。
+            # golden/cloud image を丸ごとコピーせず差分(ディファレンシング)ディスクで作る。
+            # 一瞬で済み容量も最小。親イメージは読み取り専用で共有される。
             if (-not (Test-Path $osDisk)) {
               New-VHD -Path $osDisk -ParentPath $Base -Differencing | Out-Null
             }
             New-VM -Name $Name -MemoryStartupBytes ($MemGB*1GB) -Generation $Gen -VHDPath $osDisk -SwitchName $Switch | Out-Null
             Set-VMProcessor -VMName $Name -Count $Cpu
             Set-VMMemory -VMName $Name -DynamicMemoryEnabled $false -StartupBytes ($MemGB*1GB)
+            # Linux(cloud image)は cloud-init NoCloud シードを添付して hostname/IP/SSH鍵を与える。
+            if ($isLinux) {
+              $seed = "L:\seeds\$Name-seed.vhdx"
+              if (Test-Path $seed) { Add-VMHardDiskDrive -VMName $Name -Path $seed }
+            }
             if ($Gen -eq 2) {
-              # Gen2 は起動順をドライブ優先に固定し、Secure Boot を Windows テンプレートに。
-              $hd = Get-VMHardDiskDrive -VMName $Name | Select-Object -First 1
+              # Gen2 は起動順をドライブ優先に固定。Secure Boot テンプレートは OS で分岐
+              # (Windows=MicrosoftWindows / Linux=MicrosoftUEFICertificateAuthority)。
+              $hd = Get-VMHardDiskDrive -VMName $Name -ControllerLocation 0 -ErrorAction SilentlyContinue | Select-Object -First 1
+              if (-not $hd) { $hd = Get-VMHardDiskDrive -VMName $Name | Select-Object -First 1 }
               $na = Get-VMNetworkAdapter -VMName $Name | Select-Object -First 1
               $order = @($hd); if ($na) { $order += $na }
               Set-VMFirmware -VMName $Name -BootOrder $order
-              Set-VMFirmware -VMName $Name -SecureBootTemplate MicrosoftWindows
+              if ($isLinux) { Set-VMFirmware -VMName $Name -SecureBootTemplate MicrosoftUEFICertificateAuthority }
+              else          { Set-VMFirmware -VMName $Name -SecureBootTemplate MicrosoftWindows }
             }
             $Ansible.Changed = $true
           }
@@ -63,6 +72,7 @@
           Switch: "{{ nics[0].switch }}"
           Gen: "{{ generation | default(2) | int }}"
           Base: "{{ images[os] }}"
+          Os: "{{ os }}"
 
     - name: データディスク (S2D 等) を冪等に接続
       loop: "{{ disks | default([]) | selectattr('role','equalto','data') | list }}"

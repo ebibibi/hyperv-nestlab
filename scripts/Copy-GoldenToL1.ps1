@@ -100,7 +100,9 @@ try {
 
     foreach ($s in $Source) {
         $name = Split-Path $s -Leaf
-        $dest = Join-Path $DestDir $name
+        # DestDir は L1 内のパス (例 L:\images)。L0 に L: は無いので Join-Path は使えない
+        # (存在しないドライブで失敗する)。文字列として組み立てる。
+        $dest = ($DestDir.TrimEnd('\')) + '\' + $name
         $localLen = (Get-Item $s).Length
 
         # 冪等性: 既に同一サイズで存在すればスキップ
