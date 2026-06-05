@@ -72,26 +72,27 @@ try {
             }
             throw "guest $vm へ PS Direct 接続できませんでした (timeout)"
         }
-        function In-Guest { param($vm,$cred,[scriptblock]$sb,$args,$timeoutSec=420)
+        function In-Guest { param($vm,$cred,[scriptblock]$sb,$argList,$timeoutSec=900)
+            # 注意: パラメータ名に $args は使えない (自動変数と衝突し -ArgumentList が空になる)。
             $s=Connect-Guest $vm $cred $timeoutSec
-            try { return Invoke-Command -Session $s -ScriptBlock $sb -ArgumentList $args } finally { Remove-PSSession $s }
+            try { return Invoke-Command -Session $s -ScriptBlock $sb -ArgumentList $argList } finally { Remove-PSSession $s }
         }
 
         # ===== DC =====
-        # 既にフォレストがあるか (ドメイン admin で確認)
-        # まず DC をローカル管理者で確実に掴む (OOBE 完了待ち。最大 900s)
-        W "DC ${dcName}: 初回起動(OOBE)完了とローカル管理者ログオンを待機"
-        $probe = Connect-Guest $dcName $localCred 900
-        Remove-PSSession $probe
-        # フォレスト既存判定 (ドメイン管理者で短く試す)
+        # まずフォレスト既存判定 (ドメイン管理者で)。昇格済み DC にはローカル管理者が
+        # 存在しないため、ローカル資格情報での OOBE プローブより先に行う。
         $forestExists=$false
         try {
-            $r = In-Guest $dcName $domCred { try { (Get-ADDomain).DNSRoot } catch { $null } } @() 20
+            $r = In-Guest $dcName $domCred { try { (Get-ADDomain).DNSRoot } catch { $null } } @() 90
             if ($r -eq $fqdn) { $forestExists=$true }
         } catch {}
 
         if ($forestExists) { W "DC ${dcName}: フォレスト $fqdn は既に存在 -> スキップ" }
         else {
+            # 未昇格時のみ: 初回起動(OOBE)完了をローカル管理者ログオンで待つ (最大 900s)
+            W "DC ${dcName}: 初回起動(OOBE)完了とローカル管理者ログオンを待機"
+            $probe = Connect-Guest $dcName $localCred 900
+            Remove-PSSession $probe
             W "DC ${dcName}: 静的IP($dcIp/$prefix) + 改名"
             In-Guest $dcName $localCred {
                 param($ip,$gw,$pfx,$name)
@@ -103,9 +104,9 @@ try {
                 if ($env:COMPUTERNAME -ne $name) { Rename-Computer -NewName $name -Force }
             } @($dcIp,$dcGw,$prefix,$dcName) 180
 
-            W "DC ${dcName}: 再起動して改名を適用"
-            In-Guest $dcName $localCred { Restart-Computer -Force } @() 120
-            Start-Sleep 20
+            W "DC ${dcName}: 再起動して改名を適用 (L1 から Restart-VM)"
+            Restart-VM -Name $dcName -Force
+            Start-Sleep 25
 
             W "DC ${dcName}: AD DS + DNS 役割を導入しフォレスト $fqdn を作成 (昇格)"
             In-Guest $dcName $localCred {
@@ -116,8 +117,9 @@ try {
                 Install-ADDSForest -DomainName $fqdn -DomainNetbiosName $nb -SafeModeAdministratorPassword $sp `
                     -InstallDns -Force -NoRebootOnCompletion -SkipPreChecks | Out-Null
             } @($fqdn,$netbios,$dsrm) 900
-            W "DC ${dcName}: 昇格完了。再起動"
-            In-Guest $dcName $localCred { Restart-Computer -Force } @() 120 -ErrorAction SilentlyContinue
+            # 昇格後はローカル管理者が消える(ドメイン管理者になる)。再起動は L1 から (資格情報不要)。
+            W "DC ${dcName}: 昇格完了。L1 から Restart-VM で再起動"
+            Restart-VM -Name $dcName -Force
             Start-Sleep 30
 
             W "DC ${dcName}: AD サービス起動を待機"
@@ -137,16 +139,18 @@ try {
         $members = $memberJson | ConvertFrom-Json
         foreach($m in $members){
             $mn=$m.name; $mip=$m.ip
-            # OOBE 完了待ち
-            W "member ${mn}: 初回起動(OOBE)完了を待機"
-            $mp = Connect-Guest $mn $localCred 900; Remove-PSSession $mp
-            # 参加済みか (ローカルから WMI)
+            # 参加判定を先に (ドメイン管理者で)。参加後は素のローカル "Administrator" が
+            # PS Direct で弾かれるため、ドメイン資格情報で確認する。
             $joined=$false
             try {
-                $d = In-Guest $mn $localCred { (Get-CimInstance Win32_ComputerSystem).Domain } @() 60
+                $d = In-Guest $mn $domCred { (Get-CimInstance Win32_ComputerSystem).Domain } @() 60
                 if ($d -eq $fqdn) { $joined=$true }
             } catch {}
             if ($joined) { W "member ${mn}: 既に $fqdn 参加済み -> スキップ"; continue }
+
+            # 未参加時のみ OOBE 完了待ち (ローカル管理者)
+            W "member ${mn}: 初回起動(OOBE)完了を待機"
+            $mp = Connect-Guest $mn $localCred 900; Remove-PSSession $mp
 
             W "member ${mn}: 静的IP($mip/$prefix) + DNS($dcIp) + 改名"
             In-Guest $mn $localCred {
@@ -159,8 +163,9 @@ try {
                 if ($env:COMPUTERNAME -ne $name) { Rename-Computer -NewName $name -Force }
             } @($mip,$dcGw,$prefix,$dcIp,$mn) 180
 
-            In-Guest $mn $localCred { Restart-Computer -Force } @() 120
-            Start-Sleep 20
+            W "member ${mn}: 再起動して改名/IP を適用 (L1 から Restart-VM)"
+            Restart-VM -Name $mn -Force
+            Start-Sleep 25
 
             W "member ${mn}: DC への到達を待機"
             In-Guest $mn $localCred {
@@ -175,17 +180,19 @@ try {
                 $dc = New-Object System.Management.Automation.PSCredential("$nb\Administrator",(ConvertTo-SecureString $pw -AsPlainText -Force))
                 Add-Computer -DomainName $fqdn -Credential $dc -Force
             } @($fqdn,$netbios,$guestPw) 240
-            In-Guest $mn $localCred { Restart-Computer -Force } @() 120
+            W "member ${mn}: 参加を適用するため再起動 (L1 から Restart-VM)"
+            Restart-VM -Name $mn -Force
             Start-Sleep 25
 
+            # 参加後はドメイン管理者で確認 (素のローカル Administrator は PS Direct で弾かれる)
             W "member ${mn}: 参加結果を確認"
-            $dl=(Get-Date).AddSeconds(420); $ok=$false
+            $dl=(Get-Date).AddSeconds(600); $ok=$false
             while((Get-Date) -lt $dl){
                 try {
-                    $d = In-Guest $mn $localCred { (Get-CimInstance Win32_ComputerSystem).Domain } @() 60
+                    $d = In-Guest $mn $domCred { (Get-CimInstance Win32_ComputerSystem).Domain } @() 60
                     if ($d -eq $fqdn) { $ok=$true; break }
                 } catch {}
-                Start-Sleep 12
+                Start-Sleep 15
             }
             if ($ok) { W "member ${mn}: $fqdn 参加 確認 OK" } else { throw "member $mn の参加確認に失敗" }
         }
