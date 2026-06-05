@@ -61,10 +61,23 @@ def main():
         l0_vars["ansible_password"] = os.environ["HYPERV_PASSWORD"]
     inv["_meta"]["hostvars"][l0_host] = l0_vars
 
-    # L1 Nested ホスト
+    # L1 Nested ホスト。制御 VM と同一セグメント (CtrlNAT) の管理 IP で WinRM 接続。
     l1name = model["l1"]["name"]
     inv["l1"]["hosts"].append(l1name)
-    inv["_meta"]["hostvars"][l1name] = {"l1": model["l1"]}
+    l1_vars = {
+        "ansible_host": os.environ.get("L1_ADDR", "10.20.0.20"),
+        "ansible_connection": "winrm",
+        "ansible_port": int(os.environ.get("L1_WINRM_PORT", "5985")),
+        "ansible_winrm_transport": "ntlm",
+        "ansible_winrm_scheme": "http",
+        "ansible_winrm_server_cert_validation": "ignore",
+        "l1": model["l1"],
+    }
+    if os.environ.get("L1_USER"):
+        l1_vars["ansible_user"] = os.environ["L1_USER"]
+    if os.environ.get("L1_PASSWORD"):
+        l1_vars["ansible_password"] = os.environ["L1_PASSWORD"]
+    inv["_meta"]["hostvars"][l1name] = l1_vars
 
     # L2 VM
     clusters = {c["name"]: c for c in model.get("clusters", [])}

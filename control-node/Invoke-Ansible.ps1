@@ -23,7 +23,10 @@ param(
     [securestring]$VaultPassword,
     [string]$Ip = "10.20.0.10",
     [string]$User = "labadmin",
-    [string]$CredFile
+    [string]$CredFile,
+    [string]$L1Addr = "10.20.0.20",
+    [string]$L1User = "Administrator",
+    [string]$L1Password
 )
 $ErrorActionPreference = "Stop"
 $runner = Join-Path $RepoRoot "scripts\ctrl\Run-OnControl.ps1"
@@ -59,6 +62,9 @@ export HYPERV_HOST=hyperv-host
 export HYPERV_ADDR='$hostAddr'
 export HYPERV_USER='$hostUser'
 export HYPERV_PASSWORD='$hostPass'
+export L1_ADDR='$L1Addr'
+export L1_USER='$L1User'
+export L1_PASSWORD='$L1Password'
 export ANSIBLE_HOST_KEY_CHECKING=False
 ansible-playbook -i inventory/resolved_inventory.py playbooks/$Playbook
 "@

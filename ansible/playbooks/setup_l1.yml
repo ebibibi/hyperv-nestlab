@@ -1,0 +1,62 @@
+---
+# 制御 VM の Ansible から L1 (Nested ホスト) を WinRM で構成する本線の L1 版。
+# 1. 疎通確認 (win_ping)
+# 2. L1 内に Hyper-V 役割を冪等にインストール
+# 3. L1 内に NAT 仮想スイッチ (LabNAT) を冪等に作成
+- name: "L1 Nested ホストの構成 (制御 VM -> WinRM -> L1)"
+  hosts: l1
+  gather_facts: false
+  tasks:
+    - name: win_ping
+      ansible.windows.win_ping:
+
+    - name: Hyper-V 役割の状態を取得
+      ansible.windows.win_powershell:
+        script: |
+          $f = Get-WindowsFeature -Name Hyper-V
+          $Ansible.Result = @{ installed = $f.Installed; state = $f.InstallState.ToString() }
+      register: hvfeat
+
+    - name: Hyper-V 役割をインストール (未導入なら / 再起動が必要な場合あり)
+      when: not (hvfeat.result.installed | bool)
+      ansible.windows.win_powershell:
+        script: |
+          $r = Install-WindowsFeature -Name Hyper-V -IncludeManagementTools
+          $Ansible.Changed = $true
+          $Ansible.Result = @{ success = $r.Success; restartNeeded = $r.RestartNeeded.ToString() }
+      register: hvinstall
+
+    - name: 再起動が必要なら再起動して待機
+      when: hvinstall is changed and (hvinstall.result.restartNeeded | default('No')) != 'No'
+      ansible.windows.win_reboot:
+        reboot_timeout: 600
+
+    - name: L1 内に NAT 仮想スイッチ (LabNAT) を冪等作成
+      vars:
+        sw: "{{ l1.nat.switch }}"
+        subnet: "{{ l1.nat.subnet }}"
+        host_ip: "{{ l1.nat.host_ip }}"
+      ansible.windows.win_powershell:
+        script: |
+          param($Sw,$HostIp,$Subnet)
+          $Ansible.Changed = $false
+          if (-not (Get-VMSwitch -Name $Sw -ErrorAction SilentlyContinue)) {
+            New-VMSwitch -Name $Sw -SwitchType Internal | Out-Null; $Ansible.Changed = $true
+          }
+          $alias = "vEthernet ($Sw)"
+          $prefix = [int]($Subnet.Split('/')[1])
+          if (-not (Get-NetIPAddress -InterfaceAlias $alias -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object IPAddress -eq $HostIp)) {
+            New-NetIPAddress -InterfaceAlias $alias -IPAddress $HostIp -PrefixLength $prefix | Out-Null; $Ansible.Changed = $true
+          }
+          if (-not (Get-NetNat -Name "$Sw-NAT" -ErrorAction SilentlyContinue)) {
+            New-NetNat -Name "$Sw-NAT" -InternalIPInterfaceAddressPrefix $Subnet | Out-Null; $Ansible.Changed = $true
+          }
+        parameters:
+          Sw: "{{ sw }}"
+          HostIp: "{{ host_ip }}"
+          Subnet: "{{ subnet }}"
+      register: l1net
+
+    - name: 結果サマリ
+      ansible.builtin.debug:
+        msg: "Hyper-V={{ hvfeat.result.state }} -> install_changed={{ hvinstall is changed }}, LabNAT_changed={{ l1net.changed }}"
