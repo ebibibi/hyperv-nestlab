@@ -1,0 +1,67 @@
+---
+# L0 上に Nested Hyper-V ホスト VM を冪等に作成し、Nested 必須設定を収束させる。
+# 接続先は l0 (物理 Hyper-V ホスト) / WinRM。
+# 注意: 実装は ansible.windows.win_powershell による収束タスク。Phase 1-2 で完成。
+
+- name: L1 ホスト VM を作成 (なければ)
+  ansible.windows.win_powershell:
+    script: |
+      param($Name,$MemGB,$Switch,$Gen)
+      $Ansible.Changed = $false
+      if (-not (Get-VM -Name $Name -ErrorAction SilentlyContinue)) {
+        New-VM -Name $Name -MemoryStartupBytes ($MemGB*1GB) -Generation $Gen -SwitchName $Switch | Out-Null
+        $Ansible.Changed = $true
+      }
+    parameters:
+      Name: "{{ l1.name }}"
+      MemGB: "{{ l1.memory_gb | int }}"
+      Switch: "{{ l1.nat.switch | default('Default Switch') }}"
+      Gen: 2
+
+- name: vCPU を収束
+  ansible.windows.win_powershell:
+    script: |
+      param($Name,$Cpu)
+      $Ansible.Changed = $false
+      if ((Get-VMProcessor -VMName $Name).Count -ne $Cpu) {
+        Set-VMProcessor -VMName $Name -Count $Cpu; $Ansible.Changed = $true
+      }
+    parameters:
+      Name: "{{ l1.name }}"
+      Cpu: "{{ l1.cpu | int }}"
+
+- name: 静的メモリへ収束 (Nested ホストは動的メモリ禁止)
+  ansible.windows.win_powershell:
+    script: |
+      param($Name,$MemGB)
+      $Ansible.Changed = $false
+      $m = Get-VMMemory -VMName $Name
+      if ($m.DynamicMemoryEnabled -or $m.Startup -ne ($MemGB*1GB)) {
+        Set-VMMemory -VMName $Name -DynamicMemoryEnabled $false -StartupBytes ($MemGB*1GB)
+        $Ansible.Changed = $true
+      }
+    parameters:
+      Name: "{{ l1.name }}"
+      MemGB: "{{ l1.memory_gb | int }}"
+
+- name: ネスト仮想化を公開 + MAC スプーフィング
+  when: l1.nested | default(true)
+  ansible.windows.win_powershell:
+    script: |
+      param($Name)
+      $Ansible.Changed = $false
+      if (-not (Get-VMProcessor -VMName $Name).ExposeVirtualizationExtensions) {
+        Set-VMProcessor -VMName $Name -ExposeVirtualizationExtensions $true; $Ansible.Changed = $true
+      }
+      Get-VMNetworkAdapter -VMName $Name | Set-VMNetworkAdapter -MacAddressSpoofing On
+    parameters:
+      Name: "{{ l1.name }}"
+
+- name: L1 を起動
+  ansible.windows.win_powershell:
+    script: |
+      param($Name)
+      $Ansible.Changed = $false
+      if ((Get-VM -Name $Name).State -ne 'Running') { Start-VM -Name $Name; $Ansible.Changed = $true }
+    parameters:
+      Name: "{{ l1.name }}"

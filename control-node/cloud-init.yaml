@@ -1,0 +1,19 @@
+#cloud-config
+# 制御ノード (Ansible 内蔵 VM) の cloud-init。Phase 1 で版固定して確定する。
+# 原則②: パッケージ/コレクションのバージョンを固定し、どこでも同じ制御環境を再現する。
+package_update: false   # オフライン決定性のため既定は固定リポジトリ/同梱物を使用
+packages:
+  - python3
+  - python3-pip
+write_files:
+  - path: /opt/nestedlab/requirements.lock
+    content: |
+      ansible-core==2.17.5
+runcmd:
+  - pip3 install --no-index --find-links /opt/nestedlab/wheels -r /opt/nestedlab/requirements.lock || pip3 install -r /opt/nestedlab/requirements.lock
+  - ansible-galaxy collection install -r /opt/nestedlab/ansible/requirements.yml
+users:
+  - name: labadmin
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+    # SSH 公開鍵は bootstrap が注入する

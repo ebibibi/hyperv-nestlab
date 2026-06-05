@@ -1,0 +1,10 @@
+---
+# OS 論理名 -> golden VHDX イメージパスのカタログ。
+# 実体は packer で生成・版固定し、assets/ または共有から参照する (原則②)。
+images:
+  windows_server_2025: "{{ lookup('env','IMAGES_DIR') | default('/srv/images', true) }}/win2025-golden.vhdx"
+  ubuntu_2404:         "{{ lookup('env','IMAGES_DIR') | default('/srv/images', true) }}/ubuntu2404-cloudimg.vhdx"
+
+# 注意: WinRM 接続変数 (ansible_user/password/transport 等) は all には置かない。
+# Linux ホスト(制御 VM 自身/L2 Linux)にまで効いてしまうため、
+# Windows 系は group_vars/l2_windows.yml と inventory の L0 hostvars で個別指定する。

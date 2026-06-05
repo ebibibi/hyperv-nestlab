@@ -1,0 +1,4 @@
+groups:
+  - name: app
+    # count と ip_from が必須なのに欠落 -> スキーマ検証で弾かれる
+    name_prefix: app

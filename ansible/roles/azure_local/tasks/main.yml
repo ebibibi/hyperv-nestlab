@@ -1,0 +1,9 @@
+---
+# Azure Local (旧 Azure Stack HCI) は素の Nested とは別物として隔離する (plan.md §6)。
+# Arc/クラウド依存で原則② (決定性/オフライン) を満たせないため、汎用ラボとは別ライフサイクル。
+# 内部実装は既存 OSS をラップする:
+#   - microsoft/AzStackHCISandbox
+#   - schmittnieto/AzSHCI
+- name: "[Phase 5] Azure Local ラボ (OSS ラップ・隔離)"
+  ansible.builtin.debug:
+    msg: "Azure Local は azure_local role に隔離。既存 OSS をラップして構築する (Phase 5)。"

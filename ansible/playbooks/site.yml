@@ -1,0 +1,33 @@
+---
+# 構築全体のオーケストレーション。確定モデル (build/resolved.json) を唯一の入力とする。
+# 各 role は「あるべき状態へ収束」する冪等実装。2 回流して no-change が受け入れ条件。
+
+- name: "L0 -> L1  Nested ホストの作成と Nested 有効化"
+  hosts: l0
+  gather_facts: false
+  roles:
+    - role: nested_host        # New-VM / ExposeVirtualizationExtensions / 静的メモリ / MAC spoof
+
+- name: "L1 内部: NAT 仮想スイッチ / ネットワーク"
+  hosts: l1
+  gather_facts: false
+  roles:
+    - role: l1_network         # Internal スイッチ + New-NetNat (自己完結)
+
+- name: "L1 -> L2  仮想マシン群の作成"
+  hosts: l1
+  gather_facts: false
+  roles:
+    - role: l2_vm              # 確定モデルの vms をループして冪等に作成
+
+- name: "L2: ドメイン (フォレスト / DC)"
+  hosts: domain_controllers
+  gather_facts: false
+  roles:
+    - role: ad                 # 既存 create_ad.yml の正統移植 (Phase 4)
+
+- name: "L2: フェイルオーバークラスタ + S2D"
+  hosts: cluster_nodes
+  gather_facts: false
+  roles:
+    - role: cluster_s2d        # クラスタ作成 / S2D 有効化 / 役割 (Phase 3-4)

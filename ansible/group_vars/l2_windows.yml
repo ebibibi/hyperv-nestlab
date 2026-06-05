@@ -1,0 +1,9 @@
+---
+# Windows L2 VM の WinRM 既定。資格情報は vault から (本番)。
+ansible_connection: winrm
+ansible_port: 5985
+ansible_winrm_transport: ntlm
+ansible_winrm_scheme: http
+ansible_winrm_server_cert_validation: ignore
+ansible_user: "{{ lookup('env','LAB_ADMIN') | default('Administrator', true) }}"
+ansible_password: "{{ vault.local_admin_password | default(omit) }}"

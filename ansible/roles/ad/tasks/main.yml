@@ -1,0 +1,9 @@
+---
+# L2 にフォレスト/ドメインを構成する。既存 ansible-hyperv の create_ad.yml を正統移植 (Phase 4)。
+# 接続先は domain_controllers / WinRM。
+- name: "[Phase 4] AD DS / DNS 役割導入とフォレスト昇格 (移植予定)"
+  ansible.builtin.debug:
+    msg: >-
+      forest={{ provision.forest.fqdn }} netbios={{ provision.forest.netbios }} の
+      フォレストを構成する。既存 create_ad.yml を ansible.windows.win_feature +
+      microsoft.ad.domain で冪等化して移植する。

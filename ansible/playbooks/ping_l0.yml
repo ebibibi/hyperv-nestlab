@@ -1,0 +1,25 @@
+---
+# 本線の疎通確認: 制御 VM の Ansible から WinRM 経由でホスト(L0)を叩く。
+# win_ping と、Hyper-V が見えるか (Get-VMHost) を確認する。
+- name: "L0 (物理 Hyper-V ホスト) への WinRM 疎通確認"
+  hosts: l0
+  gather_facts: false
+  tasks:
+    - name: win_ping
+      ansible.windows.win_ping:
+
+    - name: Hyper-V ホスト情報を取得 (制御 VM から Hyper-V が操作できることの証明)
+      ansible.windows.win_powershell:
+        script: |
+          $h = Get-VMHost
+          $Ansible.Result = [ordered]@{
+            computer    = $env:COMPUTERNAME
+            vm_count    = (Get-VM).Count
+            switch_count= (Get-VMSwitch).Count
+            vmms_state  = (Get-Service vmms).Status.ToString()
+          }
+      register: hv
+
+    - name: 結果表示
+      ansible.builtin.debug:
+        var: hv.result

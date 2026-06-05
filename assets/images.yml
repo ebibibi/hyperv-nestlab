@@ -1,0 +1,46 @@
+# イメージカタログ (ベンダリング + 版固定の台帳)。原則②の決定性の要。
+# 実体の大容量ファイルは git では追跡せず、ここで「取得元・チェックサム・版」を管理する。
+# bootstrap / ビルドスクリプト / ansible はこの台帳を正本として参照する。
+
+# ---- ツール (自動取得・版固定) ----
+tools:
+  qemu_img:
+    # qcow2 -> vhdx 変換に使用。Hyper-V 標準の Convert-VHD は qcow2 非対応のため必要。
+    primary_url: "https://github.com/fdcastel/qemu-img-windows-x64/releases/latest/download/qemu-img.exe"
+    fallback_url: "https://cloudbase.it/downloads/qemu-img-win-x64-2_3_0.zip"
+    dest: "tools/qemu-img.exe"
+  # 注: Windows golden は Packer/oscdimg を使わず DISM 標準ツールで生成する方式に変更
+  #     (Build-WindowsGoldenDism.ps1)。oscdimg(ADK) 依存を排し原則① を厳守するため。
+  #     Packer 版 (Build-WindowsGolden.ps1) は oscdimg がある環境向けに残置。
+
+# ---- OS イメージ ----
+images:
+  # 制御ノード兼 L2 Linux の土台。軽量 cloud image を自動取得 -> VHDX 変換。
+  ubuntu2404-cloudimg:
+    kind: linux-cloudimg
+    url: "https://cloud-images.ubuntu.com/releases/noble/release-20260518/ubuntu-24.04-server-cloudimg-amd64.img"
+    sha256: "53fdde898feed8b027d94baa9cfe8229867f330a1d9c49dc7d84465ee7f229f7"
+    download: "assets/ubuntu-24.04-server-cloudimg-amd64.img"
+    vhdx: "assets/ubuntu2404-cloudimg.vhdx"
+    generation: 2          # generic cloud image は UEFI/GPT のため Gen2
+    size_note: "約599MB (qcow2)。これが Ubuntu の軽量版の実体。"
+
+  # 制御ノードも当面は同じ Ubuntu イメージを使う (Ansible を内蔵)。
+  control-node:
+    kind: linux-cloudimg
+    same_as: ubuntu2404-cloudimg
+
+  # Windows L2 / L1 ホストの土台。利用者が ISO を配置 -> DISM で golden VHDX を生成。
+  win2025-golden:
+    kind: windows-golden
+    iso_dir: "assets/iso"
+    # 実ファイル名は "26100...SERVER_EVAL_x64FRE_ja-jp.iso" 等で "2025" を含まないため
+    # SERVER_EVAL を主キーに検出する。
+    iso_match: "(?i)SERVER_EVAL|server.*2025|2025.*server|_SERVER_"
+    iso_download_hint: "https://www.microsoft.com/evalcenter/download-windows-server-2025"
+    vhdx: "assets/win2025-golden.vhdx"
+    generation: 2
+    builder: "Build-WindowsGoldenDism.ps1 (DISM 標準ツール / oscdimg 不要)"
+    # 既定エディション (日本語 ISO)。英語 ISO の場合は
+    # "Windows Server 2025 Standard Evaluation (Desktop Experience)" に変更。
+    edition: "Windows Server 2025 Standard Evaluation (デスクトップ エクスペリエンス)"

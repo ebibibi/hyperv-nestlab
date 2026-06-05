@@ -1,0 +1,113 @@
+#Requires -Version 5.1
+<#
+.SYNOPSIS
+  制御ノード (Ansible 内蔵 Ubuntu VM) を L0 上に冪等に構築し、疎通を確立する。
+
+.DESCRIPTION
+  - CtrlNAT (Internal+NAT) ネットワークを確保 (静的 IP + 外部到達)
+  - SSH 鍵をホスト側に用意 (無ければ生成)
+  - Ubuntu cloud VHDX を複製し Gen2 VM を作成 (Secure Boot Off)
+  - cloud-init シード (CIDATA) を投入して起動
+  - -WaitReady で SSH 疎通と ansible 動作を検証
+
+  冪等: VM があれば再作成しない。
+#>
+[CmdletBinding()]
+param(
+    [string]$RepoRoot = (Split-Path -Parent $PSScriptRoot),
+    [string]$Model,
+    [string]$Name = "nested-lab-ctrl",
+    [int]$Cpu = 2,
+    [int]$MemoryGB = 4,
+    [string]$Switch = "CtrlNAT",
+    [string]$Subnet = "10.20.0.0/24",
+    [string]$HostIp = "10.20.0.1",
+    [string]$IPCidr = "10.20.0.10/24",
+    [string]$AnsibleVersion = "2.17.5",
+    [switch]$WaitReady,
+    [int]$TimeoutSec = 600
+)
+$ErrorActionPreference = "Stop"
+. (Join-Path $RepoRoot "scripts\HyperVLab.psm1.ps1")
+
+function Log($m){ Write-Host "  [ctrl] $m" -ForegroundColor DarkCyan }
+$ip = $IPCidr.Split('/')[0]
+
+# --- ネットワーク ---
+Ensure-NatNetwork -SwitchName $Switch -Subnet $Subnet -HostIp $HostIp | Out-Null
+Log "ネットワーク $Switch ($Subnet, gw $HostIp) を確保"
+
+# --- SSH 鍵 ---
+$sshDir = Join-Path $RepoRoot "build\ssh"
+New-Item -ItemType Directory -Force -Path $sshDir | Out-Null
+$key = Join-Path $sshDir "id_ed25519"
+$pub = "$key.pub"
+if (-not (Test-Path $pub)) {
+    Log "SSH 鍵を生成"
+    # 空パスフレーズは "" (2文字) ではなく真の空文字。PowerShell では「" ""」と
+    # 解釈される罠を避けるため、パラメータ配列で空文字を明示的に渡す。
+    $ka = @('-t','ed25519','-N','','-f',$key,'-C','nestedlab-ctrl','-q')
+    & ssh-keygen @ka
+    if (-not (Test-Path $pub)) { throw "ssh-keygen に失敗しました (OpenSSH クライアントが必要)。" }
+    # 生成した鍵が本当に空パスフレーズか自己検証 (回帰防止)
+    & ssh-keygen -y -P '' -f $key | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "生成した SSH 鍵が空パスフレーズではありません。" }
+}
+$pubKey = (Get-Content $pub -Raw).Trim()
+
+# --- Ubuntu VHDX 確保 ---
+$ubuntu = Join-Path $RepoRoot "assets\ubuntu2404-cloudimg.vhdx"
+if (-not (Test-Path $ubuntu)) {
+    Log "Ubuntu イメージが無いため取得"
+    & (Join-Path $RepoRoot "scripts\Get-UbuntuImage.ps1") -RepoRoot $RepoRoot
+    if ($LASTEXITCODE -ne 0) { throw "Ubuntu イメージ整備に失敗しました。" }
+}
+
+# --- VM 作成 (冪等) ---
+if (-not (Get-VM -Name $Name -ErrorAction SilentlyContinue)) {
+    # 自己完結構造: 制御 VM のディスクもリポジトリ配下 data/vms に置く
+    $dataRoot = Get-LabDataRoot -RepoRoot $RepoRoot
+    $dir = Join-Path (Join-Path $dataRoot "vms") $Name
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    $osDisk = Join-Path $dir "$Name-os.vhdx"
+    if (-not (Test-Path $osDisk)) { Copy-Item $ubuntu $osDisk }
+
+    $seed = Join-Path $dir "$Name-seed.vhdx"
+    & (Join-Path $RepoRoot "scripts\New-CloudInitSeed.ps1") `
+        -SeedPath $seed -Hostname $Name -IPCidr $IPCidr -Gateway $HostIp `
+        -SshPubKey $pubKey -AnsibleVersion $AnsibleVersion
+
+    New-VM -Name $Name -Generation 2 -MemoryStartupBytes ([int64]$MemoryGB*1GB) `
+           -VHDPath $osDisk -SwitchName $Switch | Out-Null
+    Add-VMHardDiskDrive -VMName $Name -Path $seed
+    Set-VMProcessor -VMName $Name -Count $Cpu
+    Set-VMFirmware -VMName $Name -EnableSecureBoot Off   # Linux Gen2 のため
+    Set-VMMemory -VMName $Name -DynamicMemoryEnabled $true
+    Log "VM '$Name' を作成 (Gen2, $Cpu vCPU, ${MemoryGB}GB, SecureBoot Off)"
+} else {
+    Log "VM '$Name' は既に存在 (no-change)"
+}
+
+if ((Get-VM -Name $Name).State -ne 'Running') { Start-VM -Name $Name; Log "起動しました" }
+
+if (-not $WaitReady) { exit 0 }
+
+# --- 疎通待ち + ansible 検証 ---
+Log "SSH 疎通待ち (最大 ${TimeoutSec}s, $ip)..."
+$sw = [System.Diagnostics.Stopwatch]::StartNew()
+$sshOpts = @("-i", $key, "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=$env:TEMP\nl_known", "-o", "ConnectTimeout=5")
+$ready = $false
+while ($sw.Elapsed.TotalSeconds -lt $TimeoutSec) {
+    $out = & ssh @sshOpts "labadmin@$ip" "test -f /home/labadmin/ansible-ready.txt && cat /home/labadmin/ansible-ready.txt" 2>$null
+    if ($LASTEXITCODE -eq 0 -and $out) { $ready = $true; break }
+    Start-Sleep -Seconds 10
+}
+if (-not $ready) { throw "制御ノードの準備がタイムアウトしました (cloud-init/ansible 未完了の可能性)。" }
+Log "SSH 疎通 OK / $out"
+
+# ansible 動作確認 (localhost ping)
+$ping = & ssh @sshOpts "labadmin@$ip" "ansible -i localhost, -c local -m ping all" 2>&1
+Log "ansible ping 結果:"
+$ping | ForEach-Object { Write-Host "    $_" }
+if ($ping -match "SUCCESS|pong") { Log "制御ノード疎通・Ansible 動作を確認しました"; exit 0 }
+throw "ansible ping が成功しませんでした。"

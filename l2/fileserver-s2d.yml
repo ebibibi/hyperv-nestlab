@@ -1,0 +1,28 @@
+# AD フォレスト + 2ノード ファイルサーバ・クラスタ + S2D 共有ディスク
+# パターン C（ハイブリッド）の代表例。
+defaults:
+  cpu: 4
+  memory_gb: 8
+  os: windows_server_2025
+  domain_join: corp.contoso.local
+
+domain:
+  fqdn: corp.contoso.local
+  netbios: CORP
+  dsrm_password: "{{ vault.dsrm_password }}"
+  controllers:
+    - { name: dc01, ip: 10.10.0.10, cpu: 2, memory_gb: 4 }
+
+groups:
+  - name: fileservers
+    name_prefix: fs
+    count: 2
+    ip_from: 10.10.0.21
+    data_disks: { count: 4, size_gb: 100 }   # S2D キャパシティディスク
+    roles: [ File-Services, Failover-Clustering ]
+    cluster:
+      name: fscluster
+      ip: 10.10.0.30
+      s2d: true
+      witness: { type: fileshare, host: dc01 }
+      role: { type: file_server, volume_gb: 200 }

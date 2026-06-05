@@ -1,0 +1,18 @@
+# 標準 Nested Hyper-V ホスト定義（使い回す土台）
+# どの検証でも基本これを使い、L2 だけ差し替える。
+l1_host:
+  name: nested-lab-01
+  cpu: 8
+  memory_gb: 32          # 静的メモリ（動的メモリは強制 OFF）
+  nested: true           # ExposeVirtualizationExtensions = $true
+  disk_gb: 120
+  base_image: win2025-golden
+  l0_switch: "Default Switch"   # L0 物理ホスト上で L1 VM を接続するスイッチ
+  network:
+    nat:                 # L1 の中で完結する NAT ネットワーク
+      switch: LabNAT
+      subnet: 10.10.0.0/24
+      host_ip: 10.10.0.1
+  l2_defaults:           # L2 全 VM の最下層の既定値
+    generation: 2
+    os: windows_server_2025

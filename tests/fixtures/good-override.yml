@@ -1,0 +1,13 @@
+defaults:
+  cpu: 4
+  memory_gb: 8
+  os: windows_server_2025
+groups:
+  - name: fileservers
+    name_prefix: fs
+    count: 2
+    ip_from: 10.10.0.21
+    data_disks: { count: 4, size_gb: 100 }
+    overrides:
+      fs01:
+        cpu: 16          # 1 台だけ低レベルで上書き

@@ -1,0 +1,38 @@
+# 生成物・ローカル状態
+build/
+*.log
+
+# 大容量データ (VM ディスク等。自己完結構造のため repo 配下だが追跡しない)
+data/
+
+# 自動取得した実行ファイル (版は images.yml で管理)
+tools/*.exe
+tools/*.zip
+tools/qemu/
+tools/packer-out-*/
+
+# ホスト資格情報 (ローカル限定・平文)
+build/host-cred.json
+build/ssh/
+
+# シークレット (暗号化前の平文を絶対にコミットしない)
+secrets.yml
+
+# ベンダリングされる大容量イメージ (チェックサムのみ追跡)
+assets/*.vhdx
+assets/*.img
+assets/*.iso
+
+# Ansible ローカル
+ansible/.collections/
+*.retry
+
+# Packer
+packer/**/output-*/
+packer/**/*.box
+.packer.d/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/

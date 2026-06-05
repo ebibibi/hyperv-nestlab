@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ebibibi/nestedhyper-v/schema/l1.schema.json",
+  "title": "Nested Hyper-V L1 host definition",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["l1_host"],
+  "properties": {
+    "l1_host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "cpu", "memory_gb", "network"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "cpu": { "type": "integer", "minimum": 1 },
+        "memory_gb": { "type": "number", "minimum": 1 },
+        "nested": { "type": "boolean", "default": true },
+        "disk_gb": { "type": "number", "minimum": 20, "default": 120 },
+        "base_image": { "type": "string" },
+        "l0_switch": { "type": "string", "default": "Default Switch" },
+        "network": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["nat"],
+          "properties": {
+            "nat": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["switch", "subnet", "host_ip"],
+              "properties": {
+                "switch": { "type": "string", "minLength": 1 },
+                "subnet": { "type": "string", "pattern": "^\\d{1,3}(\\.\\d{1,3}){3}/\\d{1,2}$" },
+                "host_ip": { "type": "string", "pattern": "^\\d{1,3}(\\.\\d{1,3}){3}$" }
+              }
+            }
+          }
+        },
+        "l2_defaults": {
+          "type": "object",
+          "properties": {
+            "generation": { "type": "integer", "enum": [1, 2], "default": 2 },
+            "os": { "type": "string" },
+            "cpu": { "type": "integer", "minimum": 1 },
+            "memory_gb": { "type": "number", "minimum": 1 }
+          }
+        }
+      }
+    }
+  }
+}

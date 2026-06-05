@@ -1,0 +1,11 @@
+# 最小例：Linux VM を 1 台だけ。Phase 2 PoC のターゲット。
+defaults:
+  cpu: 2
+  memory_gb: 4
+  os: ubuntu_2404
+
+groups:
+  - name: app
+    name_prefix: app
+    count: 1
+    ip_from: 10.10.0.41

@@ -1,0 +1,6 @@
+defaults: { cpu: 2, memory_gb: 4, os: windows_server_2025 }
+vms:
+  - name: a1
+    nics: [ { switch: LabNAT, ip: 10.10.0.50 } ]
+  - name: a2
+    nics: [ { switch: LabNAT, ip: 10.10.0.50 } ]   # わざと重複

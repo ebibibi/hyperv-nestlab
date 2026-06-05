@@ -1,0 +1,45 @@
+---
+# L1 の内部に NAT ネットワークを冪等に構成する (自己完結方式)。
+# 接続先は l1 (Nested Hyper-V ホスト) / WinRM。
+
+- name: Internal 仮想スイッチを確保
+  ansible.windows.win_powershell:
+    script: |
+      param($Switch)
+      $Ansible.Changed = $false
+      if (-not (Get-VMSwitch -Name $Switch -ErrorAction SilentlyContinue)) {
+        New-VMSwitch -Name $Switch -SwitchType Internal | Out-Null; $Ansible.Changed = $true
+      }
+    parameters:
+      Switch: "{{ l1.nat.switch }}"
+
+- name: ホスト側 vNIC に NAT ゲートウェイ IP を付与
+  ansible.windows.win_powershell:
+    script: |
+      param($Switch,$HostIp,$Prefix)
+      $Ansible.Changed = $false
+      $alias = "vEthernet ($Switch)"
+      $has = Get-NetIPAddress -InterfaceAlias $alias -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+             Where-Object { $_.IPAddress -eq $HostIp }
+      if (-not $has) {
+        New-NetIPAddress -InterfaceAlias $alias -IPAddress $HostIp -PrefixLength $Prefix | Out-Null
+        $Ansible.Changed = $true
+      }
+    parameters:
+      Switch: "{{ l1.nat.switch }}"
+      HostIp: "{{ l1.nat.host_ip }}"
+      Prefix: "{{ l1.nat.subnet.split('/')[1] | int }}"
+
+- name: NAT を確保
+  ansible.windows.win_powershell:
+    script: |
+      param($Switch,$Subnet)
+      $Ansible.Changed = $false
+      $name = "$Switch-NAT"
+      if (-not (Get-NetNat -Name $name -ErrorAction SilentlyContinue)) {
+        New-NetNat -Name $name -InternalIPInterfaceAddressPrefix $Subnet | Out-Null
+        $Ansible.Changed = $true
+      }
+    parameters:
+      Switch: "{{ l1.nat.switch }}"
+      Subnet: "{{ l1.nat.subnet }}"

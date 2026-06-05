@@ -1,0 +1,6 @@
+defaults: { cpu: 2, memory_gb: 4, os: windows_server_2025 }
+groups:
+  - name: app
+    name_prefix: app
+    count: 1
+    ip_from: 192.168.99.10    # L1 の 10.10.0.0/24 の外

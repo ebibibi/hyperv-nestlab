@@ -1,0 +1,4 @@
+---
+# Linux L2 VM は SSH + cloud-init。
+ansible_connection: ssh
+ansible_user: "{{ lookup('env','LAB_LINUX_USER') | default('labadmin', true) }}"

@@ -1,0 +1,11 @@
+---
+# フェイルオーバークラスタ作成 + S2D 有効化 + ファイルサーバ役割 (Phase 3-4)。
+# 接続先は cluster_nodes / WinRM。run_once で 1 ノードから操作する。
+- name: "[Phase 3-4] クラスタ + S2D 構成 (実装予定)"
+  run_once: true
+  ansible.builtin.debug:
+    msg: >-
+      cluster={{ cluster.name }} ip={{ cluster.ip }} nodes={{ cluster.nodes }}
+      s2d={{ cluster.s2d }} witness={{ cluster.witness }} を構成する。
+      Test-Cluster -> New-Cluster -> Enable-ClusterStorageSpacesDirect ->
+      New-Volume -> Add-ClusterScaleOutFileServerRole を冪等タスク化する。
