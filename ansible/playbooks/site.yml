@@ -15,10 +15,10 @@
     - role: l1_network         # Internal スイッチ + New-NetNat (自己完結)
 
 - name: "L1 -> L2  仮想マシン群の作成"
-  hosts: l1
+  hosts: l2_windows:l2_linux
   gather_facts: false
   roles:
-    - role: l2_vm              # 確定モデルの vms をループして冪等に作成
+    - role: l2_vm              # 各 L2 ホストを対象に、Hyper-V 操作は L1 へ delegate_to
 
 - name: "L2: ドメイン (フォレスト / DC)"
   hosts: domain_controllers

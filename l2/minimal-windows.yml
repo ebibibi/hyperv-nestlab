@@ -1,0 +1,13 @@
+# 最小例：Windows Server 2025 を 1 台だけ。Phase 2 の最初の縦串 PoC。
+# 既にビルド済みの golden VHDX (assets/win2025-golden.vhdx) をそのまま使うため、
+# 追加のイメージ取得なしに「L1 の中に L2 が起動する」ことを最短で検証できる。
+defaults:
+  cpu: 2
+  memory_gb: 4
+  os: windows_server_2025
+
+groups:
+  - name: win
+    name_prefix: win
+    count: 1
+    ip_from: 10.10.0.51

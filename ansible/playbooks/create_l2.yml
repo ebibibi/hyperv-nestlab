@@ -1,0 +1,31 @@
+---
+# L2 VM 群だけを作成・起動する集中検証用 playbook。
+# 接続: 各 L2 ホスト (l2_windows / l2_linux) を対象に走り、Hyper-V 操作は
+#       l2_vm ロール内で delegate_to により L1 (Nested ホスト) へ委譲する。
+# 前提: L1 が Hyper-V 役割 + LabNAT 済み (setup_l1.yml)、かつ golden が L1 へ配送済み
+#       (ホスト側 Copy-GoldenToL1.ps1)。
+- name: "L1 -> L2  仮想マシン群の作成 (集中検証)"
+  hosts: l2_windows:l2_linux
+  gather_facts: false
+  roles:
+    - role: l2_vm
+
+- name: "L2 作成結果の確認 (L1 から Get-VM)"
+  hosts: l1
+  gather_facts: false
+  tasks:
+    - name: L1 上の VM 一覧を取得
+      ansible.windows.win_powershell:
+        script: |
+          $Ansible.Changed = $false
+          foreach ($v in Get-VM) {
+            $cpu = (Get-VMProcessor -VMName $v.Name).Count
+            $mem = [math]::Round((Get-VMMemory -VMName $v.Name).Startup/1GB,1)
+            $sw  = (Get-VMNetworkAdapter -VMName $v.Name | Select-Object -First 1).SwitchName
+            "{0} | {1} | CPU={2} | Mem={3}GB | SW={4}" -f $v.Name,$v.State,$cpu,$mem,$sw
+          }
+      register: l1vms
+
+    - name: L1 上の VM 一覧を表示
+      ansible.builtin.debug:
+        var: l1vms.output

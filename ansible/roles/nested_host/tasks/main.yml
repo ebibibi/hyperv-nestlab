@@ -5,8 +5,11 @@
 
 - name: L1 ホスト VM を作成 (なければ)
   ansible.windows.win_powershell:
+    error_action: stop
     script: |
-      param($Name,$MemGB,$Switch,$Gen)
+      # 型を明示しないと Ansible 経由では文字列で渡り "32"*1GB が文字列反復 -> OOM。
+      param([string]$Name,[int]$MemGB,[string]$Switch,[int]$Gen)
+      $ErrorActionPreference = 'Stop'
       $Ansible.Changed = $false
       if (-not (Get-VM -Name $Name -ErrorAction SilentlyContinue)) {
         New-VM -Name $Name -MemoryStartupBytes ($MemGB*1GB) -Generation $Gen -SwitchName $Switch | Out-Null
@@ -20,8 +23,10 @@
 
 - name: vCPU を収束
   ansible.windows.win_powershell:
+    error_action: stop
     script: |
-      param($Name,$Cpu)
+      param([string]$Name,[int]$Cpu)
+      $ErrorActionPreference = 'Stop'
       $Ansible.Changed = $false
       if ((Get-VMProcessor -VMName $Name).Count -ne $Cpu) {
         Set-VMProcessor -VMName $Name -Count $Cpu; $Ansible.Changed = $true
@@ -32,8 +37,10 @@
 
 - name: 静的メモリへ収束 (Nested ホストは動的メモリ禁止)
   ansible.windows.win_powershell:
+    error_action: stop
     script: |
-      param($Name,$MemGB)
+      param([string]$Name,[int]$MemGB)
+      $ErrorActionPreference = 'Stop'
       $Ansible.Changed = $false
       $m = Get-VMMemory -VMName $Name
       if ($m.DynamicMemoryEnabled -or $m.Startup -ne ($MemGB*1GB)) {

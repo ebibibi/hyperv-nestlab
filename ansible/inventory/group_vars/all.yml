@@ -1,0 +1,16 @@
+---
+# OS 論理名 -> golden VHDX イメージパスのカタログ。
+# これらのパスは L1 (Nested Hyper-V ホスト) 上のローカルパスである。
+# 実体は L0 の assets/ で版固定し、ホスト側 PowerShell Direct (Copy-GoldenToL1.ps1)
+# で L1 の l1_images_dir 配下へ配送する (原則① ネットワーク非依存 / 原則② 決定性)。
+# PowerShell はスラッシュ区切りパスを受理するため YAML のバックスラッシュ地獄を避ける。
+# L1 の OS ディスクは小さいため、専用ラボストア (L:) に golden / L2 を置く
+# (Add-L1LabStore.ps1 が L1 へ大容量ディスクを増設・初期化する)。
+l1_images_dir: "L:/images"
+images:
+  windows_server_2025: "{{ l1_images_dir }}/win2025-golden.vhdx"
+  ubuntu_2404:         "{{ l1_images_dir }}/ubuntu2404-cloudimg.vhdx"
+
+# 注意: WinRM 接続変数 (ansible_user/password/transport 等) は all には置かない。
+# Linux ホスト(制御 VM 自身/L2 Linux)にまで効いてしまうため、
+# Windows 系は group_vars/l2_windows.yml と inventory の L0 hostvars で個別指定する。

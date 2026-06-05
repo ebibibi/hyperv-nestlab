@@ -51,12 +51,18 @@ Log "ansible/ と確定モデルを制御 VM へ同期"
 & $runner -RepoRoot $RepoRoot -Ip $Ip -User $User -Push @("$Model::/home/$User/nestedlab/build/resolved.json")
 # scp は実行ビットを落とすため、動的インベントリへ +x を付与
 & $runner -RepoRoot $RepoRoot -Ip $Ip -User $User -Command "chmod +x ~/nestedlab/ansible/inventory/resolved_inventory.py"
+# scp で作られるディレクトリは world-writable になり、Ansible が
+# 「world writable directory」として ansible.cfg (roles_path 等) を無視してしまう。
+# group/other の書き込み権を落として ansible.cfg を有効化する。
+& $runner -RepoRoot $RepoRoot -Ip $Ip -User $User -Command "chmod -R go-w ~/nestedlab/ansible"
 
 # --- リモート実行コマンド組み立て ---
 # 環境変数で資格情報/接続情報を渡す。playbook はリポジトリ相対。
 $remoteCmd = @"
 set -e
 cd ~/nestedlab/ansible
+export ANSIBLE_CONFIG=~/nestedlab/ansible/ansible.cfg
+export ANSIBLE_ROLES_PATH=~/nestedlab/ansible/roles
 export RESOLVED_MODEL=~/nestedlab/build/resolved.json
 export HYPERV_HOST=hyperv-host
 export HYPERV_ADDR='$hostAddr'

@@ -22,6 +22,12 @@ secrets.yml
 assets/*.vhdx
 assets/*.img
 assets/*.iso
+assets/iso/          # ISO 配置用サブフォルダごと除外 (7GB 級)
+assets/**/*.iso
+assets/**/*.vhdx
+
+# 自動取得した実行ファイルの付随物 (qemu-img の LICENSE 等)
+tools/LICENSE.txt
 
 # Ansible ローカル
 ansible/.collections/

@@ -1,54 +1,97 @@
 ---
-# 確定モデルの vms をループし、L1 の中に L2 VM を冪等に作成する。
-# 接続先は l1 (Nested Hyper-V ホスト) / WinRM。
-# OS イメージは images カタログ (packer 生成の golden VHDX) を参照する。
+# 確定モデルの各 L2 VM を L1 の中に冪等に作成する。
+# このロールは「L2 ホスト」(l2_windows / l2_linux グループの各メンバ) を対象に走り、
+# Hyper-V 操作自体は delegate_to で L1 (Nested ホスト) へ委譲して実行する。
+#   - inventory_hostname / hostvars はその L2 VM のもの (name, memory_gb, nics, disks, os)
+#   - 接続は delegate 先の L1 (WinRM) を使う
+# こうすることで、後続のゲスト内設定 (AD / クラスタ) は delegate_to を外すだけで
+# 同じホスト集合に対してそのまま書ける、という拡張性のある構造になる。
+# OS イメージは images カタログ (group_vars/all.yml) を参照する。実体は
+# Copy-GoldenToL1.ps1 がホスト側から L1 の l1_images_dir 配下へ事前配送済み。
 
-- name: L2 VM を冪等に作成
-  ansible.windows.win_powershell:
-    script: |
-      param($Name,$MemGB,$Cpu,$Switch,$Gen,$Base)
-      $Ansible.Changed = $false
-      if (-not (Get-VM -Name $Name -ErrorAction SilentlyContinue)) {
-        $dir = Join-Path (Get-VMHost).VirtualHardDiskPath $Name
-        New-Item -ItemType Directory -Force -Path $dir | Out-Null
-        $osDisk = Join-Path $dir "$Name-os.vhdx"
-        if (-not (Test-Path $osDisk)) { Copy-Item $Base $osDisk }
-        New-VM -Name $Name -MemoryStartupBytes ($MemGB*1GB) -Generation $Gen -VHDPath $osDisk -SwitchName $Switch | Out-Null
-        Set-VMProcessor -VMName $Name -Count $Cpu
-        $Ansible.Changed = $true
-      }
-    parameters:
-      Name: "{{ name }}"
-      MemGB: "{{ memory_gb | int }}"
-      Cpu: "{{ cpu | int }}"
-      Switch: "{{ nics[0].switch }}"
-      Gen: "{{ generation | default(2) | int }}"
-      Base: "{{ images[os] | default('CHANGEME-base-image-path') }}"
+- name: "L2 ({{ inventory_hostname }}) を L1 の中へ冪等に作成"
+  delegate_to: "{{ groups['l1'][0] }}"
+  block:
 
-- name: データディスク (S2D 等) を冪等に接続
-  loop: "{{ disks | selectattr('role','equalto','data') | list }}"
-  loop_control: { index_var: idx }
-  ansible.windows.win_powershell:
-    script: |
-      param($Name,$Idx,$SizeGB)
-      $Ansible.Changed = $false
-      $dir = Join-Path (Get-VMHost).VirtualHardDiskPath $Name
-      $path = Join-Path $dir ("{0}-data{1}.vhdx" -f $Name,$Idx)
-      if (-not (Test-Path $path)) {
-        New-VHD -Path $path -SizeBytes ($SizeGB*1GB) -Dynamic | Out-Null
-        Add-VMHardDiskDrive -VMName $Name -Path $path
-        $Ansible.Changed = $true
-      }
-    parameters:
-      Name: "{{ name }}"
-      Idx: "{{ idx }}"
-      SizeGB: "{{ item.size_gb | int }}"
+    - name: ベース golden が L1 に配送済みか確認
+      ansible.windows.win_stat:
+        path: "{{ images[os] }}"
+      register: l2_base
 
-- name: L2 を起動
-  ansible.windows.win_powershell:
-    script: |
-      param($Name)
-      $Ansible.Changed = $false
-      if ((Get-VM -Name $Name).State -ne 'Running') { Start-VM -Name $Name; $Ansible.Changed = $true }
-    parameters:
-      Name: "{{ name }}"
+    - name: 配送漏れなら明示的に失敗 (Copy-GoldenToL1.ps1 を先に実行)
+      ansible.builtin.assert:
+        that: l2_base.stat.exists
+        fail_msg: >-
+          L1 にベースイメージ {{ images[os] }} がありません。
+          ホスト側で scripts/Copy-GoldenToL1.ps1 を実行して golden を L1 へ配送してください。
+
+    - name: L2 VM を冪等に作成
+      ansible.windows.win_powershell:
+        error_action: stop
+        script: |
+          # 型を明示しないと Ansible 経由では文字列で渡り、"4"*1GB が文字列反復になって
+          # OutOfMemoryException を起こす。必ず [int] 等で受ける。
+          param([string]$Name,[int]$MemGB,[int]$Cpu,[string]$Switch,[int]$Gen,[string]$Base)
+          $ErrorActionPreference = 'Stop'   # 失敗を握りつぶさず確実にタスク失敗させる
+          $Ansible.Changed = $false
+          if (-not (Get-VM -Name $Name -ErrorAction SilentlyContinue)) {
+            $dir = Join-Path (Get-VMHost).VirtualHardDiskPath $Name
+            New-Item -ItemType Directory -Force -Path $dir | Out-Null
+            $osDisk = Join-Path $dir "$Name-os.vhdx"
+            # golden を丸ごとコピーせず差分(ディファレンシング)ディスクで作る。
+            # 一瞬で済み容量も最小。golden(親)は読み取り専用で共有される。
+            if (-not (Test-Path $osDisk)) {
+              New-VHD -Path $osDisk -ParentPath $Base -Differencing | Out-Null
+            }
+            New-VM -Name $Name -MemoryStartupBytes ($MemGB*1GB) -Generation $Gen -VHDPath $osDisk -SwitchName $Switch | Out-Null
+            Set-VMProcessor -VMName $Name -Count $Cpu
+            Set-VMMemory -VMName $Name -DynamicMemoryEnabled $false -StartupBytes ($MemGB*1GB)
+            if ($Gen -eq 2) {
+              # Gen2 は起動順をドライブ優先に固定し、Secure Boot を Windows テンプレートに。
+              $hd = Get-VMHardDiskDrive -VMName $Name | Select-Object -First 1
+              $na = Get-VMNetworkAdapter -VMName $Name | Select-Object -First 1
+              $order = @($hd); if ($na) { $order += $na }
+              Set-VMFirmware -VMName $Name -BootOrder $order
+              Set-VMFirmware -VMName $Name -SecureBootTemplate MicrosoftWindows
+            }
+            $Ansible.Changed = $true
+          }
+        parameters:
+          Name: "{{ name }}"
+          MemGB: "{{ memory_gb | int }}"
+          Cpu: "{{ cpu | int }}"
+          Switch: "{{ nics[0].switch }}"
+          Gen: "{{ generation | default(2) | int }}"
+          Base: "{{ images[os] }}"
+
+    - name: データディスク (S2D 等) を冪等に接続
+      loop: "{{ disks | default([]) | selectattr('role','equalto','data') | list }}"
+      loop_control: { index_var: idx }
+      ansible.windows.win_powershell:
+        error_action: stop
+        script: |
+          param([string]$Name,[int]$Idx,[int]$SizeGB)
+          $ErrorActionPreference = 'Stop'
+          $Ansible.Changed = $false
+          $dir = Join-Path (Get-VMHost).VirtualHardDiskPath $Name
+          $path = Join-Path $dir ("{0}-data{1}.vhdx" -f $Name,$Idx)
+          if (-not (Test-Path $path)) {
+            New-VHD -Path $path -SizeBytes ($SizeGB*1GB) -Dynamic | Out-Null
+            Add-VMHardDiskDrive -VMName $Name -Path $path
+            $Ansible.Changed = $true
+          }
+        parameters:
+          Name: "{{ name }}"
+          Idx: "{{ idx }}"
+          SizeGB: "{{ item.size_gb | int }}"
+
+    - name: L2 を起動
+      ansible.windows.win_powershell:
+        error_action: stop
+        script: |
+          param([string]$Name)
+          $ErrorActionPreference = 'Stop'
+          $Ansible.Changed = $false
+          if ((Get-VM -Name $Name).State -ne 'Running') { Start-VM -Name $Name; $Ansible.Changed = $true }
+        parameters:
+          Name: "{{ name }}"
