@@ -185,6 +185,15 @@ Write-Step "本線疎通確認: 制御 VM -> WinRM -> ホスト Hyper-V"
 if ($LASTEXITCODE -ne 0) { Fail "本線(制御 VM -> ホスト)の疎通に失敗しました。" }
 Write-Ok "本線疎通 OK"
 
+# ---------------------------------------------------------------- 4d2. L1 を CtrlNAT へ + WinRM
+# golden 由来の L1 は CtrlNAT 未接続 / 静的 IP 未設定 / WinRM 未構成のため、制御 VM から
+# 到達できない。PowerShell Direct (VMBus) で L1 内に静的 IP と WinRM を焼き込み、以降の
+# Ansible (setup_l1 等) が L1 (10.20.0.20) を WinRM で叩けるようにする。
+Write-Step "L1 を CtrlNAT に接続し 静的IP/WinRM を構成 (PowerShell Direct)"
+& (Join-Path $RepoRoot "scripts\Initialize-L1Network.ps1") -L1Password $GoldenAdminPassword
+if ($LASTEXITCODE -ne 0) { Fail "L1 ネットワーク/WinRM の構成に失敗しました。" }
+Write-Ok "L1 到達性 (CtrlNAT/WinRM) 準備完了"
+
 # ---------------------------------------------------------------- 4e. L1 内 Hyper-V + NAT
 # Hyper-V を L1 内に先に入れておく。ラボストアの Set-VMHost や L2 作成は L1 内 Hyper-V
 # (Set-VMHost/New-VM 等) を使うため、ここを先行させないと「Set-VMHost が認識されない」で失敗する。
