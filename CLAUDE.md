@@ -56,11 +56,28 @@
 - **golden 由来の L1 は素のままでは制御 VM から到達不能** (CtrlNAT 未接続/静的IP無し/WinRM未構成)。
   `scripts/Initialize-L1Network.ps1` が PowerShell Direct で L1 を CtrlNAT 接続 + 10.20.0.20 静的IP +
   WinRM 有効化 + FW 5985 + LocalAccountTokenFilterPolicy=1。setup_l1 の前に実行。
+- **L2 を Ansible 制御するための到達性 = ルータ化 + 最小 PS Direct。** L1 を IP forwarding で
+  ルータにし (setup_l1)、制御 VM に静的ルート 10.10.0.0/24→10.20.0.20 (cloud-init)。**LabNAT は
+  NAT を張らない (ルーテッド)** — NetNat があると戻りを SNAT してルーティングを壊す。Windows L2 の
+  初期IP/改名/WinRM/CredSSP は `Initialize-L2Access.ps1` (PS Direct) で焼き、以降は Ansible。
+- **S2D は golden が Datacenter エディションでないと不可** (Standard だと Enable-ClusterS2D が
+  0x80070032 "S2D not supported")。Build-WindowsGoldenDism は Datacenter Eval を選ぶ (上位互換)。
+- **クラスタ/S2D の AD オブジェクト作成 (CNO/VCO) は二段ホップ** → `create_cluster.yml` は
+  ドメイン管理者 + **CredSSP** transport で実行 (ノードに Enable-WSManCredSSP -Role Server)。
+  クラスタ cmdlet は `-Name`/`-Cluster <名>` を使わない (DNS 解決で失敗) — メンバ上でローカル実行。
+- **AD: ADWS が自動起動しきれず Get-ADDomain が偽になる / dcpromo が DNS ゾーンを作り切らない**
+  ことが入れ子であり、Initialize-AdForest が「ADWS 明示起動」「forward zone + SRV の健全化」を行う。
+- **制御 VM の rootfs は cloud イメージ既定で ~3.5GB と小さい。** Ensure-ControlNode が OS ディスクを
+  32GB に拡張 (cloud-init growpart) してから起動 (pip/collection で枯渇するため)。
 
 ## 主要スクリプト
-- `bootstrap.ps1` — 単一エントリ。
+- `bootstrap.ps1` — 単一エントリ (解決→images(Datacenter golden)→L1→制御VM→L1到達→setup_l1→
+  labstore→golden配送→create_l2→Initialize-L2Access→AD→cluster の順)。
 - `scripts/Initialize-L1Network.ps1` — L1 を CtrlNAT 接続 + 静的IP/WinRM (PS Direct, setup_l1 前)。
+- `scripts/Initialize-L2Access.ps1` — Windows L2 の 静的IP/改名/WinRM/CredSSP 最小ブート (PS Direct)。
+- `scripts/Initialize-AdForest.ps1` — DC 昇格 + メンバ参加 + DNS 健全化 (二段 PS Direct)。
+- `ansible/playbooks/create_cluster.yml` — Failover Cluster + S2D + SOFS (Ansible/CredSSP)。
 - `scripts/Copy-GoldenToL1.ps1` — golden を L1 (L:\images) へ Copy-VMFile 配送。
 - `scripts/Add-L1LabStore.ps1` — L1 にラボストア (L:) を増設・初期化。
-- `control-node/Invoke-Ansible.ps1` — 制御VMへ同期し collection/pywinrm 導入 + ansible-playbook 実行。
+- `control-node/Invoke-Ansible.ps1` — 制御VMへ同期し collection/pywinrm[credssp] 導入 + playbook 実行。
 - `tools/resolve.py` — L1+L2 宣言 → build/resolved.json に展開・検証。
