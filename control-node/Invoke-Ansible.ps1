@@ -66,12 +66,13 @@ Log "ansible/ と確定モデルを制御 VM へ同期"
 # clone の状態に依存しないよう、同期後に Linux 側で CR を除去して正規化する。
 & $runner -RepoRoot $RepoRoot -Ip $Ip -User $User -Command "find ~/nestedlab -type f \( -name '*.py' -o -name '*.yml' -o -name '*.yaml' -o -name '*.cfg' -o -name '*.ini' -o -name '*.sh' -o -name '*.j2' -o -name '*.json' \) -exec sed -i 's/\r`$//' {} +"
 
-# 必要な Ansible collection を導入する。cloud-init は ansible-core のみ入れるため、
-# win_ping (ansible.windows) 等が解決できない。requirements.yml の版固定 (原則②) に従い
-# 制御 VM 上で導入する。マーカーで初回のみ実行 (galaxy 取得はインターネット必須)。
-Log "Ansible collection を確認/導入 (requirements.yml, 版固定)"
-& $runner -RepoRoot $RepoRoot -Ip $Ip -User $User -Command "test -f ~/.nestedlab-collections-ok || { ansible-galaxy collection install -r ~/nestedlab/ansible/requirements.yml && touch ~/.nestedlab-collections-ok; }"
-if ($LASTEXITCODE -ne 0) { throw "Ansible collection の導入に失敗しました。制御 VM のインターネット到達 (galaxy.ansible.com) を確認してください。" }
+# 制御 VM の Ansible 依存物を導入する。cloud-init は ansible-core のみ入れるため:
+#  - pywinrm (WinRM/NTLM 接続に必須。これが無いと "No module named 'winrm'")
+#  - ansible.windows 等の collection (win_ping/win_powershell の提供元。requirements.yml で版固定)
+# いずれも版固定 (原則②)。マーカーで初回のみ実行 (pip/galaxy 取得はインターネット必須)。
+Log "Ansible 依存物を確認/導入 (pywinrm + collections, 版固定)"
+& $runner -RepoRoot $RepoRoot -Ip $Ip -User $User -Command "test -f ~/.nestedlab-deps-ok || { pip3 install --break-system-packages 'pywinrm==0.4.3' && ansible-galaxy collection install -r ~/nestedlab/ansible/requirements.yml && touch ~/.nestedlab-deps-ok; }"
+if ($LASTEXITCODE -ne 0) { throw "Ansible 依存物 (pywinrm/collection) の導入に失敗しました。制御 VM のインターネット到達 (pypi.org / galaxy.ansible.com) を確認してください。" }
 
 # --- リモート実行コマンド組み立て ---
 # 環境変数で資格情報/接続情報を渡す。playbook はリポジトリ相対。

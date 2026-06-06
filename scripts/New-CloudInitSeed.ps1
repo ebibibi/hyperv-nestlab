@@ -41,7 +41,7 @@ packages:
   - python3-pip
   - python3-venv
 runcmd:
-  - [ bash, -lc, "pip3 install --break-system-packages 'ansible-core==$AnsibleVersion' || (apt-get update && apt-get install -y ansible)" ]
+  - [ bash, -lc, "pip3 install --break-system-packages 'ansible-core==$AnsibleVersion' 'pywinrm==0.4.3' || (apt-get update && apt-get install -y ansible python3-winrm)" ]
   - [ bash, -lc, "ansible --version | head -1 > /home/$AdminUser/ansible-ready.txt 2>&1; chown $AdminUser`:$AdminUser /home/$AdminUser/ansible-ready.txt" ]
   - [ bash, -lc, "touch /run/cloud-ansible-ready" ]
 final_message: "cloud-init done: control node ready"
