@@ -35,6 +35,7 @@ if (-not $ModelPath) { $ModelPath = Join-Path $RepoRoot "build\resolved.json" }
 $cfg = Get-Content $ModelPath -Raw | ConvertFrom-Json
 if (-not $L1Name) { $L1Name = $cfg.l1.name }
 $prefix = [int]($cfg.l1.nat.subnet -split '/')[1]
+$netbios = if ($cfg.domain) { $cfg.domain.netbios } else { $null }   # 昇格済み DC への再接続用
 
 # Windows L2 のみ。DNS は (ドメインがあれば) DC、無ければ NAT GW。
 $winVms = @($cfg.vms | Where-Object { $_.os -notmatch 'ubuntu|debian|linux|rocky|alma' })
@@ -57,25 +58,31 @@ Log "L1 ($L1Name) への PowerShell Direct セッションを確立"
 $l1 = New-PSSession -VMName $L1Name -Credential $l1cred
 try {
     $result = Invoke-Command -Session $l1 -ScriptBlock {
-        param($targetJson,$prefix,$guestPw)
+        param($targetJson,$prefix,$guestPw,$netbios)
         $ErrorActionPreference = 'Stop'
         $log = New-Object System.Collections.ArrayList
         function W($m){ [void]$log.Add($m) }
         $targets = $targetJson | ConvertFrom-Json
         $localCred = New-Object System.Management.Automation.PSCredential('Administrator',(ConvertTo-SecureString $guestPw -AsPlainText -Force))
+        # 冪等再実行で対象が既に昇格済み DC だとローカル管理者が消えているため、ドメイン管理者でも試す。
+        $creds = @($localCred)
+        if ($netbios) { $creds += (New-Object System.Management.Automation.PSCredential("$netbios\Administrator",(ConvertTo-SecureString $guestPw -AsPlainText -Force))) }
 
-        function Connect-Guest { param($vm,$cred,$timeoutSec=900)
+        function Connect-Guest { param($vm,$credList,$timeoutSec=900)
             $dl=(Get-Date).AddSeconds($timeoutSec)
             while((Get-Date) -lt $dl){
-                try { return New-PSSession -VMName $vm -Credential $cred -ErrorAction Stop } catch { Start-Sleep 10 }
+                foreach ($c in $credList) {
+                    try { return New-PSSession -VMName $vm -Credential $c -ErrorAction Stop } catch {}
+                }
+                Start-Sleep 10
             }
             throw "guest $vm へ PS Direct 接続できませんでした (timeout)"
         }
 
         foreach ($t in $targets) {
             $name=$t.Name; $ip=$t.Ip; $gw=$t.Gw; $dns=$t.Dns
-            W "L2 ${name}: OOBE 完了/ローカル管理者ログオンを待機"
-            $s = Connect-Guest $name $localCred 900
+            W "L2 ${name}: OOBE 完了/管理者ログオンを待機"
+            $s = Connect-Guest $name $creds 900
             try {
                 $changed = Invoke-Command -Session $s -ScriptBlock {
                     param($ip,$gw,$pfx,$dns,$name)
@@ -114,12 +121,12 @@ try {
                 Restart-VM -Name $name -Force
                 Start-Sleep 25
                 # 再起動後に到達確認
-                $s2 = Connect-Guest $name $localCred 600; Remove-PSSession $s2
+                $s2 = Connect-Guest $name $creds 600; Remove-PSSession $s2
                 W "L2 ${name}: 再起動後ログオン確認 OK"
             }
         }
         return $log
-    } -ArgumentList $targetJson,$prefix,$GuestPassword
+    } -ArgumentList $targetJson,$prefix,$GuestPassword,$netbios
     $result | ForEach-Object { Log $_ }
 }
 finally { if ($l1) { Remove-PSSession $l1 } }
