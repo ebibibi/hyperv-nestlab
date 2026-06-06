@@ -32,6 +32,12 @@ $ErrorActionPreference = "Stop"
 $runner = Join-Path $RepoRoot "scripts\ctrl\Run-OnControl.ps1"
 function Log($m){ Write-Host "  [ansible] $m" -ForegroundColor DarkCyan }
 
+# 制御 VM を作り直すと SSH ホスト鍵が変わり、既存の known_hosts と衝突して
+# 「REMOTE HOST IDENTIFICATION HAS CHANGED」警告が大量に出る (pubkey 認証自体は通るが煩い)。
+# StrictHostKeyChecking=no で都度ピン留めし直すため、古いエントリは消しておく。
+$knownHosts = Join-Path $env:TEMP 'nl_known_ctrl'
+if (Test-Path $knownHosts) { Remove-Item $knownHosts -Force -ErrorAction SilentlyContinue }
+
 # --- ホスト資格情報 ---
 if (-not $CredFile) { $CredFile = Join-Path $RepoRoot "build\host-cred.json" }
 $hostUser = $env:HYPERV_USER; $hostPass = $env:HYPERV_PASSWORD; $hostAddr = "10.20.0.1"
@@ -55,6 +61,10 @@ Log "ansible/ と確定モデルを制御 VM へ同期"
 # 「world writable directory」として ansible.cfg (roles_path 等) を無視してしまう。
 # group/other の書き込み権を落として ansible.cfg を有効化する。
 & $runner -RepoRoot $RepoRoot -Ip $Ip -User $User -Command "chmod -R go-w ~/nestedlab/ansible"
+# Windows で clone すると git autocrlf によりテキストが CRLF になり、Linux 側で実行/解釈すると
+# 壊れる (例: inventory スクリプトの shebang '#!/usr/bin/env python3\r' → No such file)。
+# clone の状態に依存しないよう、同期後に Linux 側で CR を除去して正規化する。
+& $runner -RepoRoot $RepoRoot -Ip $Ip -User $User -Command "find ~/nestedlab -type f \( -name '*.py' -o -name '*.yml' -o -name '*.yaml' -o -name '*.cfg' -o -name '*.ini' -o -name '*.sh' -o -name '*.j2' -o -name '*.json' \) -exec sed -i 's/\r`$//' {} +"
 
 # --- リモート実行コマンド組み立て ---
 # 環境変数で資格情報/接続情報を渡す。playbook はリポジトリ相対。
@@ -74,6 +84,9 @@ export L1_PASSWORD='$L1Password'
 export ANSIBLE_HOST_KEY_CHECKING=False
 ansible-playbook -i inventory/resolved_inventory.py playbooks/$Playbook
 "@
+# この .ps1 自体が CRLF で clone されると here-string も CRLF になり、bash に渡すと
+# 「set: -<CR>: invalid option」等で壊れる。ファイルの改行コードに依存せず LF へ正規化する。
+$remoteCmd = $remoteCmd -replace "`r`n", "`n" -replace "`r", "`n"
 
 Log "制御 VM 上で ansible-playbook playbooks/$Playbook を実行"
 & $runner -RepoRoot $RepoRoot -Ip $Ip -User $User -Command $remoteCmd

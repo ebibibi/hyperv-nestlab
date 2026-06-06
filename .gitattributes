@@ -1,0 +1,29 @@
+# 改行コードの正規化。Windows で clone しても Linux 側で実行/解釈するファイルは
+# LF を強制し、PowerShell スクリプトは CRLF に固定する。
+# (Linux に scp されるファイルが CRLF だと shebang やシェルが壊れるため。
+#  実行時にも制御 VM 上で CR を除去しているが、リポジトリ側でも正しく保つ。)
+
+* text=auto
+
+# Windows 専用 (CRLF)
+*.ps1   text eol=crlf
+*.psm1  text eol=crlf
+*.psd1  text eol=crlf
+*.cmd   text eol=crlf
+*.bat   text eol=crlf
+
+# Linux で実行/解釈される (LF 必須)
+*.py    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.cfg   text eol=lf
+*.ini   text eol=lf
+*.sh    text eol=lf
+*.j2    text eol=lf
+*.json  text eol=lf
+
+# バイナリ (差分・改行変換しない)
+*.iso   binary
+*.vhdx  binary
+*.vhd   binary
+*.img   binary
