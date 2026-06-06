@@ -146,6 +146,30 @@ try {
             W "DC ${dcName}: フォレスト $fqdn 稼働確認 OK"
         }
 
+        # ===== DNS ゾーン/SRV の健全化 (昇格済み・新規どちらでも実行) =====
+        # 入れ子・高負荷だと dcpromo が AD 統合 DNS ゾーンを作り切らない / SRV 未登録のことがあり、
+        # メンバ参加が "ドメインに到達できません" で失敗する。前方参照ゾーンを保証し SRV を再登録する。
+        W "DC ${dcName}: DNS ゾーン/SRV を健全化"
+        $dnsfix = In-Guest $dcName $domCred {
+            param($fqdn)
+            $o=@()
+            try { if ((Get-Service ADWS -EA SilentlyContinue).Status -ne 'Running') { Start-Service ADWS -EA SilentlyContinue } } catch {}
+            try {
+                if (-not (Get-DnsServerZone -Name $fqdn -EA SilentlyContinue)) {
+                    Add-DnsServerPrimaryZone -Name $fqdn -ReplicationScope Forest -DynamicUpdate Secure -EA Stop
+                    $o += "forward zone $fqdn を作成"
+                } else { $o += "forward zone 既存" }
+            } catch { $o += "zone作成失敗: $($_.Exception.Message.Substring(0,[math]::Min(60,$_.Exception.Message.Length)))" }
+            try { Restart-Service Netlogon -Force -EA Stop; $o += "Netlogon 再起動(SRV再登録)" } catch {}
+            Start-Sleep 8
+            ipconfig /registerdns | Out-Null
+            Start-Sleep 5
+            $srv = try { (Resolve-DnsName -Name "_ldap._tcp.dc._msdcs.$fqdn" -Type SRV -Server 127.0.0.1 -EA Stop | Select-Object -First 1).NameTarget } catch { "SRV未解決" }
+            $o += "SRV=$srv"
+            $o
+        } @($fqdn) 180
+        $dnsfix | ForEach-Object { W "DC ${dcName}: $_" }
+
         # ===== メンバ =====
         $members = $memberJson | ConvertFrom-Json
         foreach($m in $members){
