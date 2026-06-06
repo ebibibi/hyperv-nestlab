@@ -39,6 +39,19 @@
       ansible.windows.win_reboot:
         reboot_timeout: 600
 
+    - name: CredSSP サーバを有効化 (クラスタ作成の二段ホップ委譲用)
+      # 後続の cluster 作成 play は credssp で接続する。ここ (ntlm 接続) で各ノードの WinRM に
+      # CredSSP サーバ認証を有効化しておく。Initialize-L2Access でも試みるが確実化のため再度行う。
+      ansible.windows.win_powershell:
+        error_action: stop
+        script: |
+          $ErrorActionPreference='Stop'
+          $Ansible.Changed = $false
+          try { Enable-WSManCredSSP -Role Server -Force | Out-Null } catch {}
+          if ((Get-Item WSMan:\localhost\Service\Auth\CredSSP).Value -ne $true) {
+            Set-Item WSMan:\localhost\Service\Auth\CredSSP $true; $Ansible.Changed = $true
+          }
+
 - name: "ファイル共有監視 (witness) を DC 上に用意"
   hosts: domain_controllers
   gather_facts: false
