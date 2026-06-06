@@ -185,13 +185,22 @@ Write-Step "本線疎通確認: 制御 VM -> WinRM -> ホスト Hyper-V"
 if ($LASTEXITCODE -ne 0) { Fail "本線(制御 VM -> ホスト)の疎通に失敗しました。" }
 Write-Ok "本線疎通 OK"
 
-# ---------------------------------------------------------------- 4e. L1 ラボストア
+# ---------------------------------------------------------------- 4e. L1 内 Hyper-V + NAT
+# Hyper-V を L1 内に先に入れておく。ラボストアの Set-VMHost や L2 作成は L1 内 Hyper-V
+# (Set-VMHost/New-VM 等) を使うため、ここを先行させないと「Set-VMHost が認識されない」で失敗する。
+# setup_l1 は L:/golden に依存しないので先行させても安全 (Hyper-V 導入時に L1 が再起動することがある)。
+Write-Step "L1 内に Hyper-V 役割 + LabNAT を構成 (Ansible: setup_l1.yml)"
+& (Join-Path $RepoRoot "control-node\Invoke-Ansible.ps1") -RepoRoot $RepoRoot -Model $Resolved -Playbook "setup_l1.yml" -L1Password $GoldenAdminPassword
+if ($LASTEXITCODE -ne 0) { Fail "L1 内 Hyper-V/NAT の構成に失敗しました。" }
+Write-Ok "L1 内ネットワーク準備完了"
+
+# ---------------------------------------------------------------- 4f. L1 ラボストア
 Write-Step "L1 にラボストア(L:)を増設・初期化 (golden/L2 の置き場)"
 & (Join-Path $RepoRoot "scripts\Add-L1LabStore.ps1") -L1Password $GoldenAdminPassword
 if ($LASTEXITCODE -ne 0) { Fail "L1 ラボストアの構成に失敗しました。" }
 Write-Ok "ラボストア準備完了"
 
-# ---------------------------------------------------------------- 4f. golden を L1 へ配送
+# ---------------------------------------------------------------- 4g. golden を L1 へ配送
 Write-Step "ベースイメージ(言語別 golden / Ubuntu)を L1 (L:\images) へ配送 (PowerShell Direct)"
 # L2 が実際に使う言語の golden + (Linux L2 があれば)Ubuntu を配送。L1 用 en-us は L1 OS に使うため不要。
 $delivery = @()
@@ -206,12 +215,6 @@ if ($delivery) {
     if ($LASTEXITCODE -ne 0) { Fail "ベースイメージの L1 配送に失敗しました。" }
 }
 Write-Ok "イメージ配送完了"
-
-# ---------------------------------------------------------------- 4g. L1 内 Hyper-V + NAT
-Write-Step "L1 内に Hyper-V 役割 + LabNAT を構成 (Ansible: setup_l1.yml)"
-& (Join-Path $RepoRoot "control-node\Invoke-Ansible.ps1") -RepoRoot $RepoRoot -Model $Resolved -Playbook "setup_l1.yml" -L1Password $GoldenAdminPassword
-if ($LASTEXITCODE -ne 0) { Fail "L1 内 Hyper-V/NAT の構成に失敗しました。" }
-Write-Ok "L1 内ネットワーク準備完了"
 
 # ---------------------------------------------------------------- 4h. Linux シード配送
 if ($model.vms | Where-Object { $_.os -match 'ubuntu|debian|linux' }) {
