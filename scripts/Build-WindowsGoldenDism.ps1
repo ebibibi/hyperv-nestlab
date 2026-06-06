@@ -17,7 +17,9 @@
   注意: 展開した VHDX は「初回起動時に固有化される」状態。sysprep 済みイメージではなく
         unattend による specialize/oobe で各 VM 固有化する方式 (Nested ラボに十分)。
 
-.PARAMETER Edition  install.wim のエディション名 (既定: 日本語 Standard デスクトップ)
+.PARAMETER Edition  install.wim のエディション名 (既定: Datacenter デスクトップ Evaluation)。
+                    Datacenter は Standard の上位互換で、S2D (記憶域スペースダイレクト) を
+                    使うには Datacenter が必須のため既定を Datacenter にしている。
 #>
 [CmdletBinding()]
 param(
@@ -26,7 +28,7 @@ param(
     [string]$VhdxName = "win2025-golden-en-us.vhdx",
     [string]$IsoName,                                   # 言語別 ISO を明示指定する場合のファイル名
     [string]$AdminPassword = "P@ssw0rd-Lab-Change!",
-    [string]$Edition = "Windows Server 2025 Standard Evaluation (デスクトップ エクスペリエンス)",
+    [string]$Edition = "Windows Server 2025 Datacenter Evaluation (デスクトップ エクスペリエンス)",
     [int]$DiskGB = 40
 )
 $ErrorActionPreference = "Stop"
@@ -71,15 +73,18 @@ try {
     Log "WIM: $wim"
 
     # エディション選択は言語非依存に。指定名で一致しなければ
-    # Standard + Evaluation + (Desktop Experience/デスクトップ) をパターンで選ぶ
+    # Datacenter + Evaluation + (Desktop Experience/デスクトップ) をパターンで選ぶ
     # (英語 ISO/日本語 ISO のどちらでも golden を作れるようにする)。
+    # Datacenter は Standard 上位互換で S2D に必須。
     $imgs = Get-WindowsImage -ImagePath $wim
     $sel = $imgs | Where-Object { $_.ImageName -eq $Edition } | Select-Object -First 1
+    if (-not $sel) { $sel = $imgs | Where-Object { $_.ImageName -match '(?i)datacenter' -and $_.ImageName -match '(?i)eval' -and $_.ImageName -match '(?i)desktop|デスクトップ' } | Select-Object -First 1 }
+    if (-not $sel) { $sel = $imgs | Where-Object { $_.ImageName -match '(?i)datacenter' -and $_.ImageName -match '(?i)eval' } | Select-Object -First 1 }
+    # 最後の保険: Datacenter が無ければ Standard デスクトップ (S2D は不可だが他は動く)
     if (-not $sel) { $sel = $imgs | Where-Object { $_.ImageName -match '(?i)standard' -and $_.ImageName -match '(?i)eval' -and $_.ImageName -match '(?i)desktop|デスクトップ' } | Select-Object -First 1 }
-    if (-not $sel) { $sel = $imgs | Where-Object { $_.ImageName -match '(?i)standard' -and $_.ImageName -match '(?i)eval' } | Select-Object -First 1 }
     if (-not $sel) {
         $avail = ($imgs | ForEach-Object { $_.ImageName }) -join " | "
-        throw "Standard Evaluation エディションが見つかりません。利用可能: $avail"
+        throw "Datacenter/Standard Evaluation エディションが見つかりません。利用可能: $avail"
     }
     $idx = $sel.ImageIndex
     Log "エディション '$($sel.ImageName)' = index $idx"
