@@ -1,9 +1,12 @@
 ---
-# Windows L2 VM の WinRM 既定。資格情報は vault から (本番)。
+# Windows L2 VM の WinRM 既定。L2 は LabNAT 上だが L1 ルータ経由で制御 VM から到達できる。
+# 既定はローカル管理者 (golden 既定パスワード) + NTLM。ドメイン参加 (Add-Computer) は
+# モジュールに明示資格情報を渡すため NTLM のままで二段ホップを避けられる。
+# クラスタ作成など真に委譲が要る操作だけ、対象 play 側で credssp + ドメイン管理者へ上書きする。
 ansible_connection: winrm
 ansible_port: 5985
 ansible_winrm_transport: ntlm
 ansible_winrm_scheme: http
 ansible_winrm_server_cert_validation: ignore
-ansible_user: "{{ lookup('env','LAB_ADMIN') | default('Administrator', true) }}"
-ansible_password: "{{ vault.local_admin_password | default(omit) }}"
+ansible_user: "{{ lookup('env','L2_GUEST_USER') | default('Administrator', true) }}"
+ansible_password: "{{ lookup('env','L2_GUEST_PASSWORD') | default('P@ssw0rd-Lab-Change!', true) }}"

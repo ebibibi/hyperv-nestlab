@@ -64,7 +64,10 @@ try {
     Invoke-Command -Session $session -ScriptBlock { param($d) if (-not (Test-Path $d)) { New-Item -ItemType Directory -Force -Path $d | Out-Null } } -ArgumentList $SeedDir
     foreach ($m in $made) {
         $dest = ($SeedDir.TrimEnd('\')) + '\' + (Split-Path $m.Local -Leaf)
-        Invoke-Command -Session $session -ScriptBlock { param($p) if (Test-Path $p) { Remove-Item -LiteralPath $p -Force } } -ArgumentList $dest
+        # 冪等: シードは内容が決定論的。既に L1 にあれば再配送しない。
+        # (作成済み L2 では seed が VM に接続中で「使用中」となり Remove-Item/上書きが失敗するため)
+        $exists = Invoke-Command -Session $session -ScriptBlock { param($p) Test-Path $p } -ArgumentList $dest
+        if ($exists) { Log "配送済み (スキップ): $($m.Name) -> $dest"; continue }
         Log "配送: $($m.Name) -> $dest"
         Copy-VMFile -VMName $VMName -SourcePath $m.Local -DestinationPath $dest -FileSource Host -CreateFullPath
     }

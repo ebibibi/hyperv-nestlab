@@ -78,10 +78,17 @@ if (-not (Get-VM -Name $Name -ErrorAction SilentlyContinue)) {
         Resize-VHD -Path $osDisk -SizeBytes 32GB
     }
 
+    # 制御 VM が L1 ルータ経由で L2 (LabNAT) へ到達するための静的ルート。
+    $labSubnet = "10.10.0.0/24"
+    if ($Model -and (Test-Path $Model)) {
+        try { $labSubnet = (Get-Content $Model -Raw | ConvertFrom-Json).l1.nat.subnet } catch {}
+    }
+    $l2Route = "$labSubnet=10.20.0.20"   # 10.20.0.20 = L1 の CtrlNAT 側 IP (ルータ)
+
     $seed = Join-Path $dir "$Name-seed.vhdx"
     & (Join-Path $RepoRoot "scripts\New-CloudInitSeed.ps1") `
         -SeedPath $seed -Hostname $Name -IPCidr $IPCidr -Gateway $HostIp `
-        -SshPubKey $pubKey -AnsibleVersion $AnsibleVersion
+        -SshPubKey $pubKey -AnsibleVersion $AnsibleVersion -ExtraRoutes $l2Route
 
     New-VM -Name $Name -Generation 2 -MemoryStartupBytes ([int64]$MemoryGB*1GB) `
            -VHDPath $osDisk -SwitchName $Switch | Out-Null

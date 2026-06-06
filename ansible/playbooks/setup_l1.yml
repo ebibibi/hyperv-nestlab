@@ -57,6 +57,33 @@
           Subnet: "{{ subnet }}"
       register: l1net
 
+    - name: L1 をルータ化 (CtrlNAT <-> LabNAT の IP 転送を有効化)
+      # 制御 VM (CtrlNAT) から L2 (LabNAT) へ到達できるよう L1 をルータにする。
+      # CtrlNAT は L1 の直結サブネットなので NetNat は素通し、L2 の internet 用 NAT と共存する。
+      vars:
+        ctrl_ip: "{{ hostvars[inventory_hostname]['ansible_host'] | default('10.20.0.20') }}"
+        lab_gw: "{{ l1.nat.host_ip }}"
+      ansible.windows.win_powershell:
+        error_action: stop
+        script: |
+          param($CtrlIp,$LabGw)
+          $ErrorActionPreference = 'Stop'
+          $Ansible.Changed = $false
+          foreach ($ip in @($CtrlIp,$LabGw)) {
+            $a = Get-NetIPAddress -IPAddress $ip -AddressFamily IPv4 -ErrorAction SilentlyContinue
+            if ($a) {
+              $ni = Get-NetIPInterface -InterfaceIndex $a.InterfaceIndex -AddressFamily IPv4
+              if ($ni.Forwarding -ne 'Enabled') {
+                Set-NetIPInterface -InterfaceIndex $a.InterfaceIndex -AddressFamily IPv4 -Forwarding Enabled
+                $Ansible.Changed = $true
+              }
+            }
+          }
+        parameters:
+          CtrlIp: "{{ ctrl_ip }}"
+          LabGw: "{{ lab_gw }}"
+      register: l1fwd
+
     - name: 結果サマリ
       ansible.builtin.debug:
-        msg: "Hyper-V={{ hvfeat.result.state }} -> install_changed={{ hvinstall is changed }}, LabNAT_changed={{ l1net.changed }}"
+        msg: "Hyper-V={{ hvfeat.result.state }} -> install_changed={{ hvinstall is changed }}, LabNAT_changed={{ l1net.changed }}, forwarding_changed={{ l1fwd.changed }}"

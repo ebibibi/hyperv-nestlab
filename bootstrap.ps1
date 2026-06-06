@@ -239,6 +239,16 @@ Write-Step "L1 -> L2  仮想マシン群の作成 (Ansible: create_l2.yml)"
 if ($LASTEXITCODE -ne 0) { Fail "L2 VM の作成に失敗しました。" }
 Write-Ok "L2 VM 作成完了"
 
+# ---------------------------------------------------------------- 5b. L2 アクセス初期化
+# Windows L2 に最小ブートストラップ (静的IP/改名/WinRM/CredSSP) を PowerShell Direct で焼く。
+# これで制御 VM (L1 ルータ経由) から各 L2 へ Ansible で到達できるようになる。
+if ($model.vms | Where-Object { $_.os -notmatch 'ubuntu|debian|linux' }) {
+    Write-Step "Windows L2 のアクセス初期化 (静的IP/改名/WinRM/CredSSP, PowerShell Direct)"
+    & (Join-Path $RepoRoot "scripts\Initialize-L2Access.ps1") -RepoRoot $RepoRoot -ModelPath $Resolved -L1Password $GoldenAdminPassword -GuestPassword $GoldenAdminPassword
+    if ($LASTEXITCODE -ne 0) { Fail "Windows L2 のアクセス初期化に失敗しました。" }
+    Write-Ok "Windows L2 アクセス初期化完了"
+}
+
 # ---------------------------------------------------------------- 6. AD フォレスト
 if ($model.domain) {
     Write-Step "L2 上に Active Directory フォレストを構築 (L1踏み台 PowerShell Direct)"
@@ -247,6 +257,14 @@ if ($model.domain) {
     Write-Ok "AD フォレスト構築完了"
 }
 
+# ---------------------------------------------------------------- 7. クラスタ + S2D
+if ($model.clusters -and $model.clusters.Count -gt 0) {
+    Write-Step "L2 上にフェイルオーバークラスタ + S2D を構築 (Ansible: create_cluster.yml)"
+    & (Join-Path $RepoRoot "control-node\Invoke-Ansible.ps1") -RepoRoot $RepoRoot -Model $Resolved -Playbook "create_cluster.yml" -L1Password $GoldenAdminPassword
+    if ($LASTEXITCODE -ne 0) { Fail "クラスタ/S2D の構築に失敗しました。" }
+    Write-Ok "クラスタ + S2D 構築完了"
+}
+
 Write-Host ""
-Write-Ok "完了: 宣言した環境が一括で構築されました (L1 -> L2 -> AD)。"
+Write-Ok "完了: 宣言した環境が一括で構築されました (L1 -> L2 -> AD -> Cluster)。"
 Write-Host "  再実行すれば全工程が冪等に収束します (no-change が受け入れ条件)。" -ForegroundColor DarkGray

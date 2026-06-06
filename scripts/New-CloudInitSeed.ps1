@@ -18,7 +18,10 @@ param(
     [Parameter(Mandatory)][string]$SshPubKey,
     [string]$AdminUser = "labadmin",
     [string]$AnsibleVersion = "2.17.5",
-    [string]$Locale = "en_US.UTF-8"
+    [string]$Locale = "en_US.UTF-8",
+    # 追加の静的ルート。各要素は "CIDR=VIA" 形式 (例: "10.10.0.0/24=10.20.0.20")。
+    # 制御 VM が L1 ルータ経由で L2 (LabNAT) へ到達するために使う。
+    [string[]]$ExtraRoutes = @()
 )
 $ErrorActionPreference = "Stop"
 
@@ -52,6 +55,13 @@ instance-id: $Hostname-001
 local-hostname: $Hostname
 "@
 
+# 追加静的ルート行を組み立てる ("CIDR=VIA" -> netplan routes エントリ)。
+$routeLines = "      - to: default`n        via: $Gateway"
+foreach ($r in $ExtraRoutes) {
+    $parts = $r -split '=', 2
+    if ($parts.Count -eq 2) { $routeLines += "`n      - to: $($parts[0].Trim())`n        via: $($parts[1].Trim())" }
+}
+
 $netConfig = @"
 version: 2
 ethernets:
@@ -62,8 +72,7 @@ ethernets:
     addresses:
       - $IPCidr
     routes:
-      - to: default
-        via: $Gateway
+$routeLines
     nameservers:
       addresses: [$($Dns -join ', ')]
 "@

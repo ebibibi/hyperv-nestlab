@@ -89,6 +89,10 @@ def main():
         grp = "l2_linux" if any(k in os_name for k in ("ubuntu", "debian", "linux", "rocky", "alma")) else "l2_windows"
         inv[grp]["hosts"].append(name)
         hv = dict(vm)
+        # L2 は LabNAT 上。制御 VM は L1 ルータ経由で各 L2 の宣言 IP へ到達する。
+        nics = vm.get("nics") or []
+        if nics and nics[0].get("ip"):
+            hv["ansible_host"] = nics[0]["ip"]
         if vm.get("provision", {}).get("forest"):
             inv["domain_controllers"]["hosts"].append(name)
         if name in cluster_members:

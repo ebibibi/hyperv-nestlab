@@ -55,6 +55,13 @@ Log "ansible/ と確定モデルを制御 VM へ同期"
 & $runner -RepoRoot $RepoRoot -Ip $Ip -User $User -Command "mkdir -p ~/nestedlab/build"
 & $runner -RepoRoot $RepoRoot -Ip $Ip -User $User -Push @("ansible::/home/$User/nestedlab/")
 & $runner -RepoRoot $RepoRoot -Ip $Ip -User $User -Push @("$Model::/home/$User/nestedlab/build/resolved.json")
+# 制御 VM が L2 Linux へ SSH するための秘密鍵を配置 (L2 の authorized_keys は同じ鍵の公開鍵)。
+$idKey = Join-Path $RepoRoot "build\ssh\id_ed25519"
+if (Test-Path $idKey) {
+    & $runner -RepoRoot $RepoRoot -Ip $Ip -User $User -Command "mkdir -p ~/.ssh && chmod 700 ~/.ssh"
+    & $runner -RepoRoot $RepoRoot -Ip $Ip -User $User -Push @("$idKey::/home/$User/.ssh/id_ed25519")
+    & $runner -RepoRoot $RepoRoot -Ip $Ip -User $User -Command "chmod 600 ~/.ssh/id_ed25519"
+}
 # scp は実行ビットを落とすため、動的インベントリへ +x を付与
 & $runner -RepoRoot $RepoRoot -Ip $Ip -User $User -Command "chmod +x ~/nestedlab/ansible/inventory/resolved_inventory.py"
 # scp で作られるディレクトリは world-writable になり、Ansible が
@@ -67,11 +74,11 @@ Log "ansible/ と確定モデルを制御 VM へ同期"
 & $runner -RepoRoot $RepoRoot -Ip $Ip -User $User -Command "find ~/nestedlab -type f \( -name '*.py' -o -name '*.yml' -o -name '*.yaml' -o -name '*.cfg' -o -name '*.ini' -o -name '*.sh' -o -name '*.j2' -o -name '*.json' \) -exec sed -i 's/\r`$//' {} +"
 
 # 制御 VM の Ansible 依存物を導入する。cloud-init は ansible-core のみ入れるため:
-#  - pywinrm (WinRM/NTLM 接続に必須。これが無いと "No module named 'winrm'")
+#  - pywinrm[credssp] (WinRM 接続に必須。credssp extra は AD/クラスタの二段ホップ委譲用)
 #  - ansible.windows 等の collection (win_ping/win_powershell の提供元。requirements.yml で版固定)
 # いずれも版固定 (原則②)。マーカーで初回のみ実行 (pip/galaxy 取得はインターネット必須)。
-Log "Ansible 依存物を確認/導入 (pywinrm + collections, 版固定)"
-& $runner -RepoRoot $RepoRoot -Ip $Ip -User $User -Command "test -f ~/.nestedlab-deps-ok || { pip3 install --break-system-packages 'pywinrm==0.4.3' && ansible-galaxy collection install -r ~/nestedlab/ansible/requirements.yml && touch ~/.nestedlab-deps-ok; }"
+Log "Ansible 依存物を確認/導入 (pywinrm[credssp] + collections, 版固定)"
+& $runner -RepoRoot $RepoRoot -Ip $Ip -User $User -Command "test -f ~/.nestedlab-deps2-ok || { pip3 install --break-system-packages 'pywinrm[credssp]==0.4.3' && ansible-galaxy collection install -r ~/nestedlab/ansible/requirements.yml && touch ~/.nestedlab-deps2-ok; }"
 if ($LASTEXITCODE -ne 0) { throw "Ansible 依存物 (pywinrm/collection) の導入に失敗しました。制御 VM のインターネット到達 (pypi.org / galaxy.ansible.com) を確認してください。" }
 
 # --- リモート実行コマンド組み立て ---

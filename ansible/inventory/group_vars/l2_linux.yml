@@ -1,4 +1,8 @@
 ---
-# Linux L2 VM は SSH + cloud-init。
+# Linux L2 VM は SSH + cloud-init。L1 ルータ経由で制御 VM から到達する。
+# cloud-init で制御 VM の公開鍵を authorized_keys に入れてあるので、制御 VM の秘密鍵で入れる
+# (Invoke-Ansible が L0 の秘密鍵を制御 VM の ~/.ssh/id_ed25519 へ配置する)。
 ansible_connection: ssh
 ansible_user: "{{ lookup('env','LAB_LINUX_USER') | default('labadmin', true) }}"
+ansible_ssh_private_key_file: "{{ lookup('env','HOME') }}/.ssh/id_ed25519"
+ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10"
