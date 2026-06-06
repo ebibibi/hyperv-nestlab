@@ -9,7 +9,8 @@ defaults:
 domain:
   fqdn: corp.contoso.local
   netbios: CORP
-  dsrm_password: "{{ vault.dsrm_password }}"
+  # 自己完結ラボのデモのため具体値 (ad-forest.yml と同様)。本番は vault で暗号化すること。
+  dsrm_password: "P@ssw0rd-DSRM-Lab!"
   controllers:
     - { name: dc01, ip: 10.10.0.10, cpu: 2, memory_gb: 4 }
 

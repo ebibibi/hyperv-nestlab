@@ -1,0 +1,187 @@
+---
+# L2 上にフェイルオーバークラスタ + S2D + Scale-Out ファイルサーバを冪等に構築する。
+# 前提: create_l2 で各ノードが (データディスク付きで) 作成済み、Initialize-L2Access で
+#       静的IP/WinRM/CredSSP 済み、Initialize-AdForest で DC 昇格 + ノードがドメイン参加済み。
+# 接続: 制御 VM -> (L1 ルータ) -> L2。AD オブジェクト作成 (CNO/VCO) は二段ホップになるため
+#       ドメイン管理者 + CredSSP で実行する。
+#
+# 資格情報: ドメイン管理者 = <netbios>\Administrator / golden パスワード (L2_GUEST_PASSWORD)。
+# domain / cluster はインベントリ (all.vars / 各ノードの hostvar) から取得する。
+
+- name: "クラスタノードに役割をインストール (Failover-Clustering / File Server)"
+  hosts: cluster_nodes
+  gather_facts: false
+  vars:
+    ansible_user: "{{ domain.netbios }}\\Administrator"
+    ansible_password: "{{ lookup('env','L2_GUEST_PASSWORD') | default('P@ssw0rd-Lab-Change!', true) }}"
+  tasks:
+    - name: 役割をインストール (冪等)
+      ansible.windows.win_powershell:
+        error_action: stop
+        script: |
+          $ErrorActionPreference='Stop'
+          $Ansible.Changed = $false
+          $need = @('Failover-Clustering','RSAT-Clustering-PowerShell','FS-FileServer','RSAT-AD-PowerShell')
+          $rebootNeeded = $false
+          foreach ($f in $need) {
+            $st = Get-WindowsFeature -Name $f
+            if ($st -and -not $st.Installed) {
+              $r = Install-WindowsFeature -Name $f -IncludeManagementTools
+              $Ansible.Changed = $true
+              if ($r.RestartNeeded -ne 'No') { $rebootNeeded = $true }
+            }
+          }
+          $Ansible.Result = @{ rebootNeeded = $rebootNeeded }
+      register: feat
+
+    - name: 必要なら再起動
+      when: feat.result.rebootNeeded | default(false)
+      ansible.windows.win_reboot:
+        reboot_timeout: 600
+
+- name: "ファイル共有監視 (witness) を DC 上に用意"
+  hosts: domain_controllers
+  gather_facts: false
+  vars:
+    ansible_user: "{{ domain.netbios }}\\Administrator"
+    ansible_password: "{{ lookup('env','L2_GUEST_PASSWORD') | default('P@ssw0rd-Lab-Change!', true) }}"
+  tasks:
+    - name: witness 共有を作成 (冪等)
+      # この DC を witness.host に指定しているクラスタがある場合のみ作成。
+      vars:
+        my_clusters: "{{ (clusters | default([])) | selectattr('witness','defined') | selectattr('witness.host','equalto', inventory_hostname) | list }}"
+      when: my_clusters | length > 0
+      ansible.windows.win_powershell:
+        error_action: stop
+        script: |
+          $ErrorActionPreference='Stop'
+          $Ansible.Changed = $false
+          $dir = 'C:\ClusterWitness'
+          if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null; $Ansible.Changed=$true }
+          if (-not (Get-SmbShare -Name 'ClusterWitness' -ErrorAction SilentlyContinue)) {
+            # ラボのため簡略化: Everyone にフルアクセス。クラスタの CNO/ノード計算機アカウントが書ければよい。
+            New-SmbShare -Name 'ClusterWitness' -Path $dir -FullAccess 'Everyone' | Out-Null
+            $Ansible.Changed=$true
+          }
+
+- name: "フェイルオーバークラスタ + S2D + Scale-Out ファイルサーバを構成"
+  hosts: cluster_nodes
+  gather_facts: false
+  run_once: true
+  vars:
+    # CNO/VCO 作成は L2 -> DC の二段ホップになるため CredSSP + ドメイン管理者で委譲する。
+    ansible_user: "{{ domain.netbios }}\\Administrator"
+    ansible_password: "{{ lookup('env','L2_GUEST_PASSWORD') | default('P@ssw0rd-Lab-Change!', true) }}"
+    ansible_winrm_transport: credssp
+    cl: "{{ cluster }}"
+  tasks:
+    - name: クラスタを作成 (冪等)
+      ansible.windows.win_powershell:
+        error_action: stop
+        script: |
+          param([string]$Name,[string]$Ip,[string]$NodesCsv)
+          $ErrorActionPreference='Stop'
+          $Ansible.Changed = $false
+          $nodes = $NodesCsv.Split(',')
+          $existing = Get-Cluster -Name $Name -ErrorAction SilentlyContinue
+          if (-not $existing) {
+            New-Cluster -Name $Name -Node $nodes -StaticAddress $Ip -NoStorage -Force | Out-Null
+            $Ansible.Changed = $true
+          }
+          $Ansible.Result = @{ cluster = (Get-Cluster -Name $Name).Name }
+        parameters:
+          Name: "{{ cl.name }}"
+          Ip: "{{ cl.ip }}"
+          NodesCsv: "{{ cl.nodes | join(',') }}"
+      register: clform
+
+    - name: クォーラムをファイル共有監視に設定 (冪等)
+      when: cl.witness is defined and cl.witness.type == 'fileshare'
+      ansible.windows.win_powershell:
+        error_action: stop
+        script: |
+          param([string]$Name,[string]$Share)
+          $ErrorActionPreference='Stop'
+          $Ansible.Changed = $false
+          $q = Get-ClusterQuorum -Cluster $Name
+          if ($q.QuorumResource -notlike '*Witness*' -and $q.QuorumType -ne 'NodeAndFileShareMajority') {
+            Set-ClusterQuorum -Cluster $Name -FileShareWitness $Share | Out-Null
+            $Ansible.Changed = $true
+          }
+        parameters:
+          Name: "{{ cl.name }}"
+          Share: "\\\\{{ cl.witness.host }}\\ClusterWitness"
+
+    - name: S2D を有効化 (冪等)
+      when: cl.s2d | default(false)
+      ansible.windows.win_powershell:
+        error_action: stop
+        script: |
+          $ErrorActionPreference='Stop'
+          $Ansible.Changed = $false
+          # run_once ホストはクラスタメンバなのでローカルで操作する。
+          $s2d = Get-ClusterStorageSpacesDirect -ErrorAction SilentlyContinue
+          if (-not $s2d -or $s2d.State -ne 'Enabled') {
+            # 入れ子環境: キャッシュ無し・全ディスク同種。-CacheState Disabled で全 capacity 構成。
+            Enable-ClusterStorageSpacesDirect -PoolFriendlyName 'S2DPool' -CacheState Disabled -Confirm:$false | Out-Null
+            $Ansible.Changed = $true
+          }
+          $st = (Get-ClusterStorageSpacesDirect).State
+          $Ansible.Result = @{ s2d = "$st" }
+      register: s2d
+
+    - name: CSV ボリュームを作成 (冪等)
+      when: (cl.s2d | default(false)) and (cl.roles | default([]) | length > 0)
+      ansible.windows.win_powershell:
+        error_action: stop
+        script: |
+          param([string]$VolName,[int]$SizeGB)
+          $ErrorActionPreference='Stop'
+          $Ansible.Changed = $false
+          if (-not (Get-Volume -FriendlyName $VolName -ErrorAction SilentlyContinue)) {
+            New-Volume -StoragePoolFriendlyName 'S2DPool' -FriendlyName $VolName -FileSystem CSVFS_ReFS -Size ($SizeGB*1GB) | Out-Null
+            $Ansible.Changed = $true
+          }
+          $Ansible.Result = @{ volume = $VolName }
+        parameters:
+          VolName: "{{ (cl.roles | first).type }}vol"
+          SizeGB: "{{ (cl.roles | first).volume_gb | default(100) | int }}"
+      register: vol
+
+    - name: Scale-Out ファイルサーバ役割 + 共有を作成 (冪等)
+      when: (cl.roles | default([]) | length > 0)
+      ansible.windows.win_powershell:
+        error_action: stop
+        script: |
+          param([string]$ClName,[string]$SofsName,[string]$ShareName,[string]$VolName)
+          $ErrorActionPreference='Stop'
+          $Ansible.Changed = $false
+          # SOFS 役割
+          if (-not (Get-ClusterGroup -Cluster $ClName -Name $SofsName -ErrorAction SilentlyContinue)) {
+            Add-ClusterScaleOutFileServerRole -Name $SofsName -Cluster $ClName | Out-Null
+            $Ansible.Changed = $true
+            Start-Sleep 5
+          }
+          # CSV 上に共有フォルダ
+          $csv = Get-ChildItem 'C:\ClusterStorage' -Directory | Select-Object -First 1
+          if ($csv) {
+            $sharePath = Join-Path $csv.FullName $ShareName
+            if (-not (Test-Path $sharePath)) { New-Item -ItemType Directory -Path $sharePath -Force | Out-Null }
+            if (-not (Get-SmbShare -Name $ShareName -ErrorAction SilentlyContinue)) {
+              New-SmbShare -Name $ShareName -Path $sharePath -FullAccess 'Everyone' -ContinuouslyAvailable $true | Out-Null
+              $Ansible.Changed = $true
+            }
+          }
+          $Ansible.Result = @{ sofs = $SofsName; csv = ($csv.FullName) }
+        parameters:
+          ClName: "{{ cl.name }}"
+          SofsName: "{{ cl.name }}-sofs"
+          ShareName: "share1"
+          VolName: "{{ (cl.roles | first).type }}vol"
+      register: sofs
+
+    - name: クラスタ構成サマリ
+      ansible.builtin.debug:
+        msg: >-
+          cluster={{ clform.result.cluster }} s2d={{ s2d.result.s2d | default('n/a') }}
+          volume={{ vol.result.volume | default('n/a') }} sofs={{ sofs.result.sofs | default('n/a') }}
