@@ -51,8 +51,9 @@ foreach ($vm in $linux) {
     $gw = $vm.nics[0].gw
     $cidr = "$ip/$prefix"
     $seed = Join-Path $localSeedDir "$name-seed.vhdx"
-    Log "シード生成: $name ($cidr gw=$gw)"
-    & $seedScript -SeedPath $seed -Hostname $name -IPCidr $cidr -Gateway $gw -SshPubKey $pub | Out-Null
+    $locale = if ($vm.locale) { $vm.locale } else { 'en_US.UTF-8' }
+    Log "シード生成: $name ($cidr gw=$gw locale=$locale)"
+    & $seedScript -SeedPath $seed -Hostname $name -IPCidr $cidr -Gateway $gw -SshPubKey $pub -Locale $locale | Out-Null
     $made += [pscustomobject]@{ Name=$name; Local=$seed }
 }
 

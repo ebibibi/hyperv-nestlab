@@ -52,6 +52,7 @@
           "generation": { "type": "integer", "enum": [1, 2] },
           "domain_join": { "type": ["string", "boolean"] },
           "disk_gb": { "type": "number", "minimum": 20 },
+          "language": { "type": "string" },
           "data_disks": {
             "type": "object",
             "additionalProperties": false,
@@ -89,7 +90,8 @@
         "os": { "type": "string" },
         "generation": { "type": "integer", "enum": [1, 2] },
         "domain_join": { "type": ["string", "boolean"] },
-        "disk_gb": { "type": "number", "minimum": 20 }
+        "disk_gb": { "type": "number", "minimum": 20 },
+        "language": { "type": "string" }
       }
     },
     "disk": {
@@ -129,6 +131,7 @@
         "generation": { "type": "integer", "enum": [1, 2] },
         "domain_join": { "type": ["string", "boolean"] },
         "disk_gb": { "type": "number", "minimum": 20 },
+        "language": { "type": "string" },
         "disks": { "type": "array", "items": { "$ref": "#/$defs/disk" } },
         "nics": { "type": "array", "items": { "$ref": "#/$defs/nic" } },
         "provision": { "$ref": "#/$defs/provision" }
@@ -145,6 +148,7 @@
         "os": { "type": "string" },
         "generation": { "type": "integer", "enum": [1, 2] },
         "domain_join": { "type": ["string", "boolean"] },
+        "language": { "type": "string" },
         "disks": { "type": "array", "items": { "$ref": "#/$defs/disk" } },
         "nics": { "type": "array", "items": { "$ref": "#/$defs/nic" } },
         "provision": { "$ref": "#/$defs/provision" }

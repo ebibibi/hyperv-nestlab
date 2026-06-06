@@ -32,11 +32,11 @@ if (-not (Get-VMSwitch -Name $l0switch -ErrorAction SilentlyContinue)) {
     $l0switch = "HostNAT"
 }
 
-# base_image 解決 (images カタログ)
-$imagesYml = Join-Path $RepoRoot "assets\images.yml"
+# base_image 解決。L1(ホスト)は英語固定 golden (resolver が base_image_file=win2025-golden-en-us.vhdx を付与)。
 $base = $null
-if ($l1.base_image) {
-    $candidate = Join-Path $RepoRoot ("assets\{0}.vhdx" -f $l1.base_image)
+$baseFile = if ($l1.base_image_file) { $l1.base_image_file } elseif ($l1.base_image) { "$($l1.base_image).vhdx" } else { $null }
+if ($baseFile) {
+    $candidate = Join-Path $RepoRoot ("assets\{0}" -f $baseFile)
     if (Test-Path $candidate) { $base = $candidate }
 }
 if (-not $base) {

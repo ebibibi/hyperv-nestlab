@@ -23,6 +23,7 @@ import argparse
 import copy
 import ipaddress
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -40,7 +41,25 @@ SCHEMA_DIR = REPO / "schema"
 
 # 既定値
 DEFAULT_OS_DISK_GB = 80
-INHERITABLE = ("cpu", "memory_gb", "os", "generation", "domain_join", "disk_gb")
+# language も継承対象 (L1.l2_defaults < L2.defaults < group < overrides)
+INHERITABLE = ("cpu", "memory_gb", "os", "generation", "domain_join", "disk_gb", "language")
+
+LINUX_RE = re.compile(r"ubuntu|debian|linux|rocky|alma", re.I)
+
+
+def is_linux_os(os_name):
+    return bool(LINUX_RE.search(os_name or ""))
+
+
+def load_images_catalog():
+    """assets/images.yml を読み、言語カタログ等を返す (無ければ空)。"""
+    p = REPO / "assets" / "images.yml"
+    if not p.is_file():
+        return {}
+    try:
+        return yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError:
+        return {}
 
 
 class ConfigError(Exception):
@@ -106,6 +125,19 @@ def resolve(l1, l2):
     switch = nat["switch"]
     gw = nat["host_ip"]
     subnet = ipaddress.ip_network(nat["subnet"], strict=False)
+
+    # 言語カタログ (L2 ゲストの言語選択用)。L1 は常に en-us 固定。
+    imgcat = load_images_catalog()
+    wl = imgcat.get("windows_languages", {}) or {}
+    win_catalog = wl.get("catalog", {}) or {}
+    default_lang = wl.get("default", "en-us")
+    fwlink = wl.get("fwlink", "https://go.microsoft.com/fwlink/?linkid=2345828&clcid={clcid}&culture={culture}&country={country}")
+    win_img = (imgcat.get("images", {}) or {}).get("win2025-golden", {}) or {}
+    golden_pattern = win_img.get("golden_pattern", "win2025-golden-{lang}.vhdx")
+    iso_pattern = win_img.get("iso_pattern", "windows-server-2025-{lang}.iso")
+    linux_locales = imgcat.get("linux_locales", {}) or {}
+    ubuntu_basename = "ubuntu2404-cloudimg.vhdx"
+    L1_LANG = "en-us"   # ホスト(1段目)は安定性のため英語固定
 
     base = deep_merge(l1h.get("l2_defaults", {}), l2.get("defaults", {}))
 
@@ -202,6 +234,52 @@ def resolve(l1, l2):
             "roles": c.get("roles", []),
         })
 
+    # --- 言語 / ベースイメージファイル / ロケールを各 VM に付与 ---
+    # language は INHERITABLE なので各 spec に既に入っている場合がある。未指定は既定言語。
+    for vm in vms:
+        lang = vm.get("language") or default_lang
+        vm["language"] = lang
+        if is_linux_os(vm.get("os")):
+            vm["base_image_file"] = ubuntu_basename
+            vm["locale"] = linux_locales.get(lang, "en_US.UTF-8")
+        else:
+            if lang not in win_catalog:
+                raise ConfigError(
+                    f"VM '{vm.get('name')}' の language '{lang}' は未対応です。"
+                    f"利用可能: {', '.join(sorted(win_catalog.keys()))} "
+                    f"(assets/images.yml の windows_languages.catalog に追加可)"
+                )
+            vm["base_image_file"] = golden_pattern.format(lang=lang)
+
+    # --- 整備が必要なイメージ集合 (bootstrap が DL/ビルドする) ---
+    needed = {}
+
+    def add_win(lang):
+        if lang not in win_catalog:
+            raise ConfigError(f"language '{lang}' は未対応です。利用可能: {', '.join(sorted(win_catalog.keys()))}")
+        if ("windows", lang) in needed:
+            return
+        c = win_catalog[lang]
+        needed[("windows", lang)] = {
+            "kind": "windows",
+            "language": lang,
+            "label": c.get("label", lang),
+            "golden_file": golden_pattern.format(lang=lang),
+            "iso_name": iso_pattern.format(lang=lang),
+            "iso_url": fwlink.format(clcid=c["clcid"], culture=c["culture"], country=c["country"]),
+        }
+
+    add_win(L1_LANG)   # L1(ホスト)は常に en-us
+    linux_needed = False
+    for vm in vms:
+        if is_linux_os(vm.get("os")):
+            linux_needed = True
+        else:
+            add_win(vm.get("language") or default_lang)
+    images_needed = list(needed.values())
+    if linux_needed:
+        images_needed.append({"kind": "linux", "vhdx": ubuntu_basename})
+
     model = {
         "l1": {
             "name": l1h["name"],
@@ -210,12 +288,16 @@ def resolve(l1, l2):
             "nested": l1h.get("nested", True),
             "disk_gb": l1h.get("disk_gb", 120),
             "base_image": l1h.get("base_image"),
+            # L1 は英語固定 golden を使う (ホスト言語は en-us 固定)
+            "base_image_file": golden_pattern.format(lang=L1_LANG),
+            "language": L1_LANG,
             "l0_switch": l1h.get("l0_switch", "Default Switch"),
             "nat": {"switch": switch, "subnet": str(subnet), "host_ip": gw},
         },
         "domain": domain,
         "vms": vms,
         "clusters": clusters,
+        "images_needed": images_needed,
     }
     semantic_checks(model, subnet, gw)
     return model

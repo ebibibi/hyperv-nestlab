@@ -13,17 +13,17 @@
   delegate_to: "{{ groups['l1'][0] }}"
   block:
 
-    - name: ベース golden が L1 に配送済みか確認
+    - name: ベースイメージ ({{ language | default('en-us') }}) が L1 に配送済みか確認
       ansible.windows.win_stat:
-        path: "{{ images[os] }}"
+        path: "{{ l1_images_dir }}/{{ base_image_file }}"
       register: l2_base
 
     - name: 配送漏れなら明示的に失敗 (Copy-GoldenToL1.ps1 を先に実行)
       ansible.builtin.assert:
         that: l2_base.stat.exists
         fail_msg: >-
-          L1 にベースイメージ {{ images[os] }} がありません。
-          ホスト側で scripts/Copy-GoldenToL1.ps1 を実行して golden を L1 へ配送してください。
+          L1 にベースイメージ {{ l1_images_dir }}/{{ base_image_file }} がありません。
+          ホスト側で scripts/Copy-GoldenToL1.ps1 を実行してベースを L1 へ配送してください。
 
     - name: L2 VM を冪等に作成
       ansible.windows.win_powershell:
@@ -71,7 +71,7 @@
           Cpu: "{{ cpu | int }}"
           Switch: "{{ nics[0].switch }}"
           Gen: "{{ generation | default(2) | int }}"
-          Base: "{{ images[os] }}"
+          Base: "{{ l1_images_dir }}/{{ base_image_file }}"
           Os: "{{ os }}"
 
     - name: データディスク (S2D 等) を冪等に接続

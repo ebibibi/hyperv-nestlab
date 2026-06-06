@@ -95,6 +95,7 @@ overrides エスケープハッチ)。
 | `l2/minimal-windows.yml` | Windows Server 2025 を 1 台 | ✅ 実機検証 |
 | `l2/minimal-linux.yml` | Ubuntu 24.04 を 1 台 (cloud-init) | ✅ 実機検証 |
 | `l2/ad-forest.yml` | AD フォレスト dc01 + メンバ mem01 | ✅ 実機検証 |
+| `l2/multi-lang.yml` | ゲスト言語選択のデモ (en / ja の Win + ja の Linux) | ✅ resolve/DryRun |
 | `l2/fileserver-s2d.yml` | AD + 2ノード ファイルサーバクラスタ + S2D | 🚧 ロール足場 |
 
 最小の例 (`l2/minimal-windows.yml`):
@@ -103,6 +104,21 @@ defaults: { cpu: 2, memory_gb: 4, os: windows_server_2025 }
 groups:
   - { name: win, name_prefix: win, count: 1, ip_from: 10.10.0.51 }
 ```
+
+### ゲスト(L2)の言語選択
+L2 ごとに `language:` を指定するだけで、その言語の ISO を自動 DL し、その言語の golden を
+作って起動する (`defaults` / `group` / `vm` / `overrides` で継承・上書き可)。
+```yaml
+groups:
+  - { name: win-ja, count: 1, ip_from: 10.10.0.62, os: windows_server_2025, language: ja-jp }
+  - { name: lin-ja, count: 1, ip_from: 10.10.0.63, os: ubuntu_2404,        language: ja-jp }
+```
+- **Windows**: `language` の ISO を取得し言語別 golden (`win2025-golden-<lang>.vhdx`) を生成。
+- **Linux**: 単一 cloud image を使い cloud-init で `locale`(例 `ja_JP.UTF-8`)を設定。
+- 利用可能言語は [`assets/images.yml`](assets/images.yml) の `windows_languages.catalog`
+  (en-us / ja-jp / de-de / fr-fr / es-es / it-it / ko-kr / zh-cn / pt-br / ru-ru。LCID追加で拡張可)。
+- **L1(ホスト/1段目)は安定性のため常に en-us 固定**(多言語化による不具合・複雑化を避けるため)。
+  将来 GUI を付ける際は、この `language` 値をチェックボックス/ドロップダウンで選ぶ形にできる。
 
 ---
 

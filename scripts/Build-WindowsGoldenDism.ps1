@@ -23,7 +23,8 @@
 param(
     [string]$RepoRoot = (Split-Path -Parent $PSScriptRoot),
     [string]$IsoDir,
-    [string]$VhdxName = "win2025-golden.vhdx",
+    [string]$VhdxName = "win2025-golden-en-us.vhdx",
+    [string]$IsoName,                                   # 言語別 ISO を明示指定する場合のファイル名
     [string]$AdminPassword = "P@ssw0rd-Lab-Change!",
     [string]$Edition = "Windows Server 2025 Standard Evaluation (デスクトップ エクスペリエンス)",
     [int]$DiskGB = 40
@@ -38,18 +39,24 @@ function Log($m){ Write-Host "  [win-dism] $m" -ForegroundColor DarkCyan }
 if (Test-Path $vhdx) { Log "golden VHDX は既に存在 (no-change): $vhdx"; exit 0 }
 
 # --- ISO 特定 ---
-$iso = Get-ChildItem -Path $IsoDir -Filter *.iso -ErrorAction SilentlyContinue |
-       Where-Object { $_.Name -match '(?i)SERVER_EVAL|server.*2025|2025.*server|_SERVER_' } | Select-Object -First 1
-if (-not $iso) { $iso = Get-ChildItem -Path $IsoDir -Filter *.iso -ErrorAction SilentlyContinue | Select-Object -First 1 }
-if (-not $iso) {
-    # 直リンクから自動ダウンロード (フォーム不要)
-    Log "ISO が無いため自動ダウンロードします"
-    & (Join-Path $PSScriptRoot "Get-WindowsIso.ps1") -RepoRoot $RepoRoot -IsoDir $IsoDir
-    if ($LASTEXITCODE -ne 0) { exit 3 }
+if ($IsoName) {
+    # 言語別 ISO を明示指定 (bootstrap が事前に Get-WindowsIso で配置済みのはず)
+    $iso = Get-Item (Join-Path $IsoDir $IsoName) -ErrorAction SilentlyContinue
+    if (-not $iso) { Log "指定 ISO '$IsoName' が無いため自動ダウンロードします"; & (Join-Path $PSScriptRoot "Get-WindowsIso.ps1") -RepoRoot $RepoRoot -IsoDir $IsoDir -IsoName $IsoName; if ($LASTEXITCODE -ne 0) { exit 3 }; $iso = Get-Item (Join-Path $IsoDir $IsoName) -ErrorAction SilentlyContinue }
+    if (-not $iso) { exit 3 }
+} else {
     $iso = Get-ChildItem -Path $IsoDir -Filter *.iso -ErrorAction SilentlyContinue |
            Where-Object { $_.Name -match '(?i)SERVER_EVAL|server.*2025|2025.*server|_SERVER_' } | Select-Object -First 1
     if (-not $iso) { $iso = Get-ChildItem -Path $IsoDir -Filter *.iso -ErrorAction SilentlyContinue | Select-Object -First 1 }
-    if (-not $iso) { exit 3 }
+    if (-not $iso) {
+        Log "ISO が無いため自動ダウンロードします (en-us)"
+        & (Join-Path $PSScriptRoot "Get-WindowsIso.ps1") -RepoRoot $RepoRoot -IsoDir $IsoDir
+        if ($LASTEXITCODE -ne 0) { exit 3 }
+        $iso = Get-ChildItem -Path $IsoDir -Filter *.iso -ErrorAction SilentlyContinue |
+               Where-Object { $_.Name -match '(?i)SERVER_EVAL|server.*2025|2025.*server|_SERVER_' } | Select-Object -First 1
+        if (-not $iso) { $iso = Get-ChildItem -Path $IsoDir -Filter *.iso -ErrorAction SilentlyContinue | Select-Object -First 1 }
+        if (-not $iso) { exit 3 }
+    }
 }
 Log "ISO: $($iso.Name)"
 

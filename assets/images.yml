@@ -30,19 +30,49 @@ images:
     kind: linux-cloudimg
     same_as: ubuntu2404-cloudimg
 
-  # Windows L2 / L1 ホストの土台。利用者が ISO を配置 -> DISM で golden VHDX を生成。
+  # Windows L2 / L1 ホストの土台。ISO は直リンク自動 DL -> DISM で golden VHDX を生成。
   win2025-golden:
     kind: windows-golden
     iso_dir: "assets/iso"
-    # 実ファイル名は "26100...SERVER_EVAL_x64FRE_ja-jp.iso" 等で "2025" を含まないため
-    # SERVER_EVAL を主キーに検出する。
     iso_match: "(?i)SERVER_EVAL|server.*2025|2025.*server|_SERVER_"
-    # フォーム登録なしで直接取得できる固定 fwlink。Get-WindowsIso.ps1 が自動 DL する。
-    # 既定は英語(en-us, clcid=0x409)。日本語版は clcid=0x411&culture=ja-jp&country=JP。
-    iso_url: "https://go.microsoft.com/fwlink/?linkid=2345828&clcid=0x409&culture=en-us&country=us"
-    vhdx: "assets/win2025-golden.vhdx"
+    # golden は言語ごとに作る: win2025-golden-<lang>.vhdx (例 win2025-golden-en-us.vhdx)。
+    # ISO も言語ごと: windows-server-2025-<lang>.iso。下の windows_languages を参照。
+    golden_pattern: "win2025-golden-{lang}.vhdx"
+    iso_pattern: "windows-server-2025-{lang}.iso"
     generation: 2
     builder: "Build-WindowsGoldenDism.ps1 (DISM 標準ツール / oscdimg 不要)"
-    # エディションは Build-WindowsGoldenDism.ps1 が言語非依存で自動選択
-    # (Standard + Evaluation + Desktop Experience)。en/ja どちらの ISO でも可。
-    edition: "Windows Server 2025 Standard Evaluation (デスクトップ エクスペリエンス)"
+    # エディションは言語非依存で自動選択 (Standard + Evaluation + Desktop Experience)。
+
+# ---- Windows 言語カタログ ----
+# L2(ゲスト)の言語を YAML の `language:` で選ぶと、対応する ISO を自動 DL し
+# その言語の golden を作る。L1(ホスト/1段目)は安定性のため常に en-us 固定。
+# ISO はフォーム登録なしの固定 fwlink (linkid=2345828) から clcid/culture/country で取得。
+# 追加したい言語は LCID(clcid) と culture/country を足すだけ。
+windows_languages:
+  default: en-us
+  fwlink: "https://go.microsoft.com/fwlink/?linkid=2345828&clcid={clcid}&culture={culture}&country={country}"
+  catalog:
+    en-us: { clcid: "0x409", culture: "en-us", country: "us", label: "English (United States)" }
+    ja-jp: { clcid: "0x411", culture: "ja-jp", country: "JP", label: "日本語" }
+    de-de: { clcid: "0x407", culture: "de-de", country: "DE", label: "Deutsch" }
+    fr-fr: { clcid: "0x40c", culture: "fr-fr", country: "FR", label: "Français" }
+    es-es: { clcid: "0x40a", culture: "es-es", country: "ES", label: "Español" }
+    it-it: { clcid: "0x410", culture: "it-it", country: "IT", label: "Italiano" }
+    ko-kr: { clcid: "0x412", culture: "ko-kr", country: "KR", label: "한국어" }
+    zh-cn: { clcid: "0x804", culture: "zh-cn", country: "CN", label: "中文(简体)" }
+    pt-br: { clcid: "0x416", culture: "pt-br", country: "BR", label: "Português (Brasil)" }
+    ru-ru: { clcid: "0x419", culture: "ru-ru", country: "RU", label: "Русский" }
+
+# ---- Linux ロケール対応 (cloud-init) ----
+# L2 Linux は単一 cloud image を使い、`language:` をロケールへ写像して cloud-init で設定する。
+linux_locales:
+  en-us: "en_US.UTF-8"
+  ja-jp: "ja_JP.UTF-8"
+  de-de: "de_DE.UTF-8"
+  fr-fr: "fr_FR.UTF-8"
+  es-es: "es_ES.UTF-8"
+  it-it: "it_IT.UTF-8"
+  ko-kr: "ko_KR.UTF-8"
+  zh-cn: "zh_CN.UTF-8"
+  pt-br: "pt_BR.UTF-8"
+  ru-ru: "ru_RU.UTF-8"

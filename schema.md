@@ -35,6 +35,12 @@
 ```
 L1.l2_defaults  <  L2.defaults  <  group（グループ直下の設定）  <  overrides（VM個別）
 ```
+- 継承対象フィールド: `cpu` / `memory_gb` / `os` / `generation` / `domain_join` / `disk_gb` / **`language`**。
+- `language`（ゲスト言語）: 例 `en-us` / `ja-jp`。未指定は `en-us`。
+  - **Windows**: その言語の ISO を自動取得し言語別 golden (`win2025-golden-<lang>.vhdx`) を生成。
+  - **Linux**: 単一 cloud image + cloud-init で `locale`（例 `ja_JP.UTF-8`）を設定。
+  - 利用可能言語と LCID は `assets/images.yml` の `windows_languages.catalog` / `linux_locales`。
+  - **L1（ホスト）は常に `en-us` 固定**（安定性優先・複雑化回避）。
 - スカラ／マップは **深いマージ**（deep merge）。
 - リスト（`disks` / `nics` / `roles`）は **置換**（より具体的な層が丸ごと上書き）。予測しやすさを優先。
 - `data_disks: {count, size_gb}` は糖衣。解決時に `disks:` の `role: data` 複数本へ展開される。`overrides` で `disks:` をフル明示した場合はそちらが優先（＝置換）。

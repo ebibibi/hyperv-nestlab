@@ -17,7 +17,8 @@ param(
     [string[]]$Dns = @("1.1.1.1","8.8.8.8"),
     [Parameter(Mandatory)][string]$SshPubKey,
     [string]$AdminUser = "labadmin",
-    [string]$AnsibleVersion = "2.17.5"
+    [string]$AnsibleVersion = "2.17.5",
+    [string]$Locale = "en_US.UTF-8"
 )
 $ErrorActionPreference = "Stop"
 
@@ -25,6 +26,7 @@ $userData = @"
 #cloud-config
 hostname: $Hostname
 preserve_hostname: false
+locale: $Locale
 users:
   - name: $AdminUser
     sudo: ALL=(ALL) NOPASSWD:ALL

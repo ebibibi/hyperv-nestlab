@@ -1,0 +1,32 @@
+# 言語選択のデモ: ゲスト(L2)ごとに language を指定できる。
+# 指定した言語の ISO を自動 DL し、その言語の golden を作って差分で起動する。
+# L1(ホスト/1段目)は安定性のため常に en-us 固定 (ここでは指定しない)。
+# 利用可能な言語は assets/images.yml の windows_languages.catalog を参照
+# (en-us / ja-jp / de-de / fr-fr / es-es / it-it / ko-kr / zh-cn / pt-br / ru-ru)。
+defaults:
+  cpu: 2
+  memory_gb: 4
+  # 既定言語 (個別 group/vm で上書き可)。未指定なら en-us。
+  language: en-us
+
+groups:
+  - name: win-en
+    name_prefix: winen
+    count: 1
+    ip_from: 10.10.0.61
+    os: windows_server_2025
+    # language 未指定 -> defaults の en-us
+
+  - name: win-ja
+    name_prefix: winja
+    count: 1
+    ip_from: 10.10.0.62
+    os: windows_server_2025
+    language: ja-jp           # 日本語 Windows (ja-jp ISO -> ja golden)
+
+  - name: linux-ja
+    name_prefix: linja
+    count: 1
+    ip_from: 10.10.0.63
+    os: ubuntu_2404
+    language: ja-jp           # Ubuntu は cloud-init で locale=ja_JP.UTF-8 を設定
