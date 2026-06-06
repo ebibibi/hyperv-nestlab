@@ -9,6 +9,10 @@
   事前に見積もり、可能なら分割するか、それでも前面で待てる形にする。）
 - Git は逐次コミットして、コード一発で再現できる状態を保つ。
 - 大容量・機密物 (VHDX/ISO/鍵/data/build) は `.gitignore` 済み。コミットしない。
+- **ハマりどころは Claude のメモリに書かない。リポジトリ内の `KB/` に記事として書き溜める。**
+  この OSS を作る中で踏んだ罠は `KB/NNNN-*.md` に追記し (`KB/README.md` が索引と書き方ルール)、
+  「同じ罠に二度はまらない」記録 兼 汎用ノウハウにする。メモリ (`.claude/.../memory`) は
+  プロジェクトの状態・ゴール・約束ごと専用で、技術的ハマりは置かない。
 
 ## リポジトリの場所 (重要)
 - **開発用(正本)は `D:\hyperv-nestlab-dev`**。GitHub: https://github.com/ebibibi/hyperv-nestlab (origin/master)。
@@ -29,46 +33,26 @@
 - L1 内部 (Hyper-V 役割/L2/AD/クラスタ) は Ansible (制御VM → WinRM → L1)。
 - ネットワーク: L1 は CtrlNAT(10.20.0.0/24, L1=10.20.0.20)。L2 は LabNAT(10.10.0.0/24)。
 
-## ハマりどころ (既知・解決済み)
-- **win_powershell の引数は文字列で渡る。** `"4"*1GB` は文字列反復になり OutOfMemoryException。
-  数値を使うパラメータは必ず `param([int]$MemGB)` 等で型を明示する。
-- win_powershell は既定で非終端エラーを握りつぶす。`error_action: stop` +
-  `$ErrorActionPreference='Stop'` を付けて失敗を必ず表面化させる。
-- ホストは**日本語ロケール**。統合コンポーネント名等は英語名で引けない。ID で特定する
-  (例: Guest Service Interface = 6C09BB55-...)。
-- group_vars は**インベントリ隣接** (`ansible/inventory/group_vars/`) に置く。動的インベントリ
-  スクリプト隣接でないと読まれない。
-- scp 後の `ansible/` は world-writable になり ansible.cfg が無視される。`chmod -R go-w` する
-  (Invoke-Ansible.ps1 で対応済み)。
-- L1 の OS ディスクは golden 由来で 40GB と小さい。golden/L2 は L1 に増設する
-  **ラボストア (L:, Add-L1LabStore.ps1)** に置く。L2 OS は **差分(ディファレンシング)ディスク**。
-- L1 admin (golden 既定): `Administrator` / `P@ssw0rd-Lab-Change!`。
-- **Windows で clone すると git autocrlf でテキストが CRLF になる。** Linux 側で実行/解釈する
-  ファイル (inventory の `.py` shebang、bash に渡す here-string 等) が CRLF だと壊れる
-  (`set: -<CR>`, `python3\r: No such file`)。対策: `.gitattributes` で Linux 物は LF 固定 +
-  Invoke-Ansible.ps1 が同期後に CR 除去 + here-string を LF 正規化 (両方済み)。
-- **制御 VM は cloud-init で ansible-core しか入らない。** `win_ping` 等 (ansible.windows) と
-  WinRM 接続の `pywinrm` は別途必要。Invoke-Ansible.ps1 が requirements.yml の collection +
-  pywinrm==0.4.3 を版固定で導入 (マーカー `~/.nestedlab-deps-ok`)。NTLM なので pywinrm が
-  requests_ntlm を連れてくる。galaxy/pypi 到達 (CtrlNAT NAT) が前提。
-- **L1 内 Hyper-V は labstore/L2 より先に入れる。** `Set-VMHost`/`New-VM` は L1 内 Hyper-V 必須。
-  bootstrap は setup_l1 (Hyper-V 導入, 再起動あり) → labstore → golden 配送 → L2 の順。
-- **golden 由来の L1 は素のままでは制御 VM から到達不能** (CtrlNAT 未接続/静的IP無し/WinRM未構成)。
-  `scripts/Initialize-L1Network.ps1` が PowerShell Direct で L1 を CtrlNAT 接続 + 10.20.0.20 静的IP +
-  WinRM 有効化 + FW 5985 + LocalAccountTokenFilterPolicy=1。setup_l1 の前に実行。
-- **L2 を Ansible 制御するための到達性 = ルータ化 + 最小 PS Direct。** L1 を IP forwarding で
-  ルータにし (setup_l1)、制御 VM に静的ルート 10.10.0.0/24→10.20.0.20 (cloud-init)。**LabNAT は
-  NAT を張らない (ルーテッド)** — NetNat があると戻りを SNAT してルーティングを壊す。Windows L2 の
-  初期IP/改名/WinRM/CredSSP は `Initialize-L2Access.ps1` (PS Direct) で焼き、以降は Ansible。
-- **S2D は golden が Datacenter エディションでないと不可** (Standard だと Enable-ClusterS2D が
-  0x80070032 "S2D not supported")。Build-WindowsGoldenDism は Datacenter Eval を選ぶ (上位互換)。
-- **クラスタ/S2D の AD オブジェクト作成 (CNO/VCO) は二段ホップ** → `create_cluster.yml` は
-  ドメイン管理者 + **CredSSP** transport で実行 (ノードに Enable-WSManCredSSP -Role Server)。
-  クラスタ cmdlet は `-Name`/`-Cluster <名>` を使わない (DNS 解決で失敗) — メンバ上でローカル実行。
-- **AD: ADWS が自動起動しきれず Get-ADDomain が偽になる / dcpromo が DNS ゾーンを作り切らない**
-  ことが入れ子であり、Initialize-AdForest が「ADWS 明示起動」「forward zone + SRV の健全化」を行う。
-- **制御 VM の rootfs は cloud イメージ既定で ~3.5GB と小さい。** Ensure-ControlNode が OS ディスクを
-  32GB に拡張 (cloud-init growpart) してから起動 (pip/collection で枯渇するため)。
+## ハマりどころ → `KB/` を見ること
+
+既知のハマりどころと解決法は**すべて `KB/` に記事化**している (`KB/README.md` が索引)。
+新たに踏んだら**メモリではなく KB に追記**する (上の「作業の進め方」のルール参照)。主な記事:
+
+- `KB/0001` Windows clone の CRLF が Linux 側を壊す (`.gitattributes` で LF 固定)
+- `KB/0002` 制御VMには ansible-core しか無い (collection / pywinrm[credssp] を版固定導入)
+- `KB/0003` 制御VM→L2 到達性 = L1 ルータ化 + ルーテッド LabNAT (NetNat 撤去) + 最小 PS Direct
+- `KB/0004` DISM で golden を焼く / **S2D には Datacenter エディション必須** (Standard 不可)
+- `KB/0005` 言語別 ISO の冪等性 (冪等キーはファイル名単位 / 検証失敗でも消さない)
+- `KB/0006` 入れ子クラスタ + S2D (CredSSP 二段ホップ / cluster cmdlet は `-Name` 不可 / CacheState Disabled)
+- `KB/0007` 入れ子 dcpromo は ADWS と DNS ゾーンを作り切らない (昇格後の健全化)
+- `KB/0008` win_powershell の罠 (引数は文字列 / 既定でエラー握りつぶし / 日本語ロケール)
+- `KB/0009` cloud イメージの rootfs (~3.5GB) は起動前に VHD 拡張する
+- `KB/0010` L1 内 Hyper-V は labstore/L2 より先に入れる (`Set-VMHost`/`New-VM` の前提)
+
+補足 (KB 化するほどでもない定常事実):
+- L1/L2 admin (golden 既定): `Administrator` / `P@ssw0rd-Lab-Change!`。
+- L1 の OS ディスクは golden 由来で 40GB と小さい。golden/L2 は **ラボストア (L:, Add-L1LabStore.ps1)**
+  に置き、L2 OS は **差分(ディファレンシング)ディスク**。
 
 ## 主要スクリプト
 - `bootstrap.ps1` — 単一エントリ (解決→images(Datacenter golden)→L1→制御VM→L1到達→setup_l1→
