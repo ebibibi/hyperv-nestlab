@@ -58,8 +58,9 @@ L0  物理 Hyper-V ホスト  ── あなたが用意する唯一の前提
 ### 前提
 - Windows Server / Windows 11 等で **Hyper-V 役割が有効**であること (これだけ)。
 - Python (pyyaml + jsonschema) … 設定の検証/解決に使用。
-- Windows L2 を使う場合は **Windows Server 2025 評価版 ISO** を `assets/iso/` に配置
-  (未配置なら `bootstrap.ps1` が取得手順を案内します)。Ubuntu は自動取得で操作不要。
+- イメージ(Windows Server 2025 評価版 ISO / Ubuntu cloud image)は **すべて自動ダウンロード**。
+  Windows ISO はフォーム登録なしの固定直リンクから取得するため、利用者の手作業は不要。
+  別言語/別版にしたい場合のみ `assets/images.yml` の `iso_url` を差し替える。
 
 ### 実行
 ```powershell
@@ -146,7 +147,7 @@ python tools/resolve.py --l1 l1/standard-host.yml --l2 l2/ad-forest.yml --valida
 ## ステータス
 - ✅ スキーマ / resolver / 検証 / DryRun プラン (pytest)
 - ✅ L0→L1 冪等プロビジョニング (nested / 静的メモリ / MAC spoof)
-- ✅ イメージ整備 (Windows=ISO→DISM golden / Ubuntu=固定URL自動DL+変換)
+- ✅ イメージ整備 (Windows=ISO直リンク自動DL→DISM golden / Ubuntu=固定URL自動DL+変換)
 - ✅ 制御ノード自動構築 + 本線疎通 (制御VM Ansible → WinRM → Hyper-V)
 - ✅ **L2: Windows Server 2025** (差分ディスク・冪等・実機検証)
 - ✅ **L2: Ubuntu 24.04** (cloud-init で hostname/静的IP/SSH・実機検証)

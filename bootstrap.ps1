@@ -129,8 +129,7 @@ if ($DryRun) {
     if ($missing) {
         Write-Host "  DryRun: 未整備のイメージがあります。本番実行時に自動取得/ビルドします" -ForegroundColor DarkGray
         if ($missing -contains "windows") {
-            Write-Host "    - Windows: Server 2025 評価版 ISO の配置が必要です。本番実行時に手順を案内します。" -ForegroundColor DarkGray
-            Write-Host "               先に確認/配置するには: .\scripts\Wait-WindowsIso.ps1 -NoWait" -ForegroundColor DarkGray
+            Write-Host "    - Windows: Server 2025 評価版 ISO を直リンクから自動ダウンロード (フォーム不要・操作不要)" -ForegroundColor DarkGray
         }
         if ($missing -contains "linux")   { Write-Host "    - Linux: 固定 URL から自動ダウンロード+変換 (操作不要)" -ForegroundColor DarkGray }
     }
@@ -146,13 +145,13 @@ if ($need.Keys -contains "ubuntu2404-cloudimg.vhdx" -and -not (Test-Path (Join-P
     if ($LASTEXITCODE -ne 0) { Fail "Ubuntu イメージの整備に失敗しました。" }
 }
 if ($need.Keys -contains "win2025-golden.vhdx" -and -not (Test-Path (Join-Path $assetsDir "win2025-golden.vhdx"))) {
-    # ISO 配置をガイド + 配置されるまで待機・検証 (原則① の唯一の手動ステップ)
-    & (Join-Path $RepoRoot "scripts\Wait-WindowsIso.ps1") -RepoRoot $RepoRoot
-    if ($LASTEXITCODE -ne 0) { Fail "Windows Server 2025 ISO が未配置です。上のガイドに従い assets\iso\ に ISO を置いて再実行してください。" }
+    # ISO はフォーム不要の直リンクから自動ダウンロード (操作不要)
+    & (Join-Path $RepoRoot "scripts\Get-WindowsIso.ps1") -RepoRoot $RepoRoot
+    if ($LASTEXITCODE -ne 0) { Fail "Windows Server 2025 ISO の自動ダウンロードに失敗しました。ネットワーク/URL を確認してください。" }
     # DISM 標準ツールで golden を生成 (oscdimg/ADK 不要 = 原則①)。
     & (Join-Path $RepoRoot "scripts\Build-WindowsGoldenDism.ps1") -AdminPassword $GoldenAdminPassword
     $rc = $LASTEXITCODE
-    if ($rc -eq 3) { Fail "Windows ISO 未配置のため中断しました。assets\iso\ に ISO を置いて再実行してください。" }
+    if ($rc -eq 3) { Fail "Windows ISO の取得に失敗しました。" }
     if ($rc -ne 0) { Fail "Windows golden イメージのビルドに失敗しました。" }
 }
 Write-Ok "イメージ整備完了"

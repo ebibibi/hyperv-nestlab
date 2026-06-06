@@ -42,8 +42,14 @@ $iso = Get-ChildItem -Path $IsoDir -Filter *.iso -ErrorAction SilentlyContinue |
        Where-Object { $_.Name -match '(?i)SERVER_EVAL|server.*2025|2025.*server|_SERVER_' } | Select-Object -First 1
 if (-not $iso) { $iso = Get-ChildItem -Path $IsoDir -Filter *.iso -ErrorAction SilentlyContinue | Select-Object -First 1 }
 if (-not $iso) {
-    & (Join-Path $PSScriptRoot "Wait-WindowsIso.ps1") -RepoRoot $RepoRoot -IsoDir $IsoDir -NoWait
-    exit 3
+    # 直リンクから自動ダウンロード (フォーム不要)
+    Log "ISO が無いため自動ダウンロードします"
+    & (Join-Path $PSScriptRoot "Get-WindowsIso.ps1") -RepoRoot $RepoRoot -IsoDir $IsoDir
+    if ($LASTEXITCODE -ne 0) { exit 3 }
+    $iso = Get-ChildItem -Path $IsoDir -Filter *.iso -ErrorAction SilentlyContinue |
+           Where-Object { $_.Name -match '(?i)SERVER_EVAL|server.*2025|2025.*server|_SERVER_' } | Select-Object -First 1
+    if (-not $iso) { $iso = Get-ChildItem -Path $IsoDir -Filter *.iso -ErrorAction SilentlyContinue | Select-Object -First 1 }
+    if (-not $iso) { exit 3 }
 }
 Log "ISO: $($iso.Name)"
 
@@ -57,12 +63,19 @@ try {
     if (-not $wim) { throw "install.wim/esd が見つかりません。" }
     Log "WIM: $wim"
 
-    $idx = (Get-WindowsImage -ImagePath $wim | Where-Object { $_.ImageName -eq $Edition }).ImageIndex
-    if (-not $idx) {
-        $avail = (Get-WindowsImage -ImagePath $wim | ForEach-Object { $_.ImageName }) -join " | "
-        throw "エディション '$Edition' が見つかりません。利用可能: $avail"
+    # エディション選択は言語非依存に。指定名で一致しなければ
+    # Standard + Evaluation + (Desktop Experience/デスクトップ) をパターンで選ぶ
+    # (英語 ISO/日本語 ISO のどちらでも golden を作れるようにする)。
+    $imgs = Get-WindowsImage -ImagePath $wim
+    $sel = $imgs | Where-Object { $_.ImageName -eq $Edition } | Select-Object -First 1
+    if (-not $sel) { $sel = $imgs | Where-Object { $_.ImageName -match '(?i)standard' -and $_.ImageName -match '(?i)eval' -and $_.ImageName -match '(?i)desktop|デスクトップ' } | Select-Object -First 1 }
+    if (-not $sel) { $sel = $imgs | Where-Object { $_.ImageName -match '(?i)standard' -and $_.ImageName -match '(?i)eval' } | Select-Object -First 1 }
+    if (-not $sel) {
+        $avail = ($imgs | ForEach-Object { $_.ImageName }) -join " | "
+        throw "Standard Evaluation エディションが見つかりません。利用可能: $avail"
     }
-    Log "エディション '$Edition' = index $idx"
+    $idx = $sel.ImageIndex
+    Log "エディション '$($sel.ImageName)' = index $idx"
 
     # --- VHDX 作成 + パーティション (拡張子は .vhdx 必須) ---
     $tmpVhdx = Join-Path $assets "building-$VhdxName"

@@ -37,9 +37,13 @@ if (-not $iso) {
     $iso = Get-ChildItem -Path $IsoDir -Filter *.iso -ErrorAction SilentlyContinue | Select-Object -First 1
 }
 if (-not $iso) {
-    # ISO 配置ガイドは Wait-WindowsIso.ps1 に一本化 (待機なしで案内のみ)
-    & (Join-Path $PSScriptRoot "Wait-WindowsIso.ps1") -RepoRoot $RepoRoot -IsoDir $IsoDir -NoWait
-    exit 3
+    # ISO はフォーム不要の直リンクから自動ダウンロード
+    & (Join-Path $PSScriptRoot "Get-WindowsIso.ps1") -RepoRoot $RepoRoot -IsoDir $IsoDir
+    if ($LASTEXITCODE -ne 0) { exit 3 }
+    $iso = Get-ChildItem -Path $IsoDir -Filter *.iso -ErrorAction SilentlyContinue |
+           Where-Object { $_.Name -match '(?i)SERVER_EVAL|server.*2025|2025.*server|_SERVER_' } | Select-Object -First 1
+    if (-not $iso) { $iso = Get-ChildItem -Path $IsoDir -Filter *.iso -ErrorAction SilentlyContinue | Select-Object -First 1 }
+    if (-not $iso) { exit 3 }
 }
 Log "ISO 検出: $($iso.Name)"
 

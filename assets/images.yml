@@ -37,10 +37,12 @@ images:
     # 実ファイル名は "26100...SERVER_EVAL_x64FRE_ja-jp.iso" 等で "2025" を含まないため
     # SERVER_EVAL を主キーに検出する。
     iso_match: "(?i)SERVER_EVAL|server.*2025|2025.*server|_SERVER_"
-    iso_download_hint: "https://www.microsoft.com/evalcenter/download-windows-server-2025"
+    # フォーム登録なしで直接取得できる固定 fwlink。Get-WindowsIso.ps1 が自動 DL する。
+    # 既定は英語(en-us, clcid=0x409)。日本語版は clcid=0x411&culture=ja-jp&country=JP。
+    iso_url: "https://go.microsoft.com/fwlink/?linkid=2345828&clcid=0x409&culture=en-us&country=us"
     vhdx: "assets/win2025-golden.vhdx"
     generation: 2
     builder: "Build-WindowsGoldenDism.ps1 (DISM 標準ツール / oscdimg 不要)"
-    # 既定エディション (日本語 ISO)。英語 ISO の場合は
-    # "Windows Server 2025 Standard Evaluation (Desktop Experience)" に変更。
+    # エディションは Build-WindowsGoldenDism.ps1 が言語非依存で自動選択
+    # (Standard + Evaluation + Desktop Experience)。en/ja どちらの ISO でも可。
     edition: "Windows Server 2025 Standard Evaluation (デスクトップ エクスペリエンス)"
