@@ -43,10 +43,24 @@
 - L1 の OS ディスクは golden 由来で 40GB と小さい。golden/L2 は L1 に増設する
   **ラボストア (L:, Add-L1LabStore.ps1)** に置く。L2 OS は **差分(ディファレンシング)ディスク**。
 - L1 admin (golden 既定): `Administrator` / `P@ssw0rd-Lab-Change!`。
+- **Windows で clone すると git autocrlf でテキストが CRLF になる。** Linux 側で実行/解釈する
+  ファイル (inventory の `.py` shebang、bash に渡す here-string 等) が CRLF だと壊れる
+  (`set: -<CR>`, `python3\r: No such file`)。対策: `.gitattributes` で Linux 物は LF 固定 +
+  Invoke-Ansible.ps1 が同期後に CR 除去 + here-string を LF 正規化 (両方済み)。
+- **制御 VM は cloud-init で ansible-core しか入らない。** `win_ping` 等 (ansible.windows) と
+  WinRM 接続の `pywinrm` は別途必要。Invoke-Ansible.ps1 が requirements.yml の collection +
+  pywinrm==0.4.3 を版固定で導入 (マーカー `~/.nestedlab-deps-ok`)。NTLM なので pywinrm が
+  requests_ntlm を連れてくる。galaxy/pypi 到達 (CtrlNAT NAT) が前提。
+- **L1 内 Hyper-V は labstore/L2 より先に入れる。** `Set-VMHost`/`New-VM` は L1 内 Hyper-V 必須。
+  bootstrap は setup_l1 (Hyper-V 導入, 再起動あり) → labstore → golden 配送 → L2 の順。
+- **golden 由来の L1 は素のままでは制御 VM から到達不能** (CtrlNAT 未接続/静的IP無し/WinRM未構成)。
+  `scripts/Initialize-L1Network.ps1` が PowerShell Direct で L1 を CtrlNAT 接続 + 10.20.0.20 静的IP +
+  WinRM 有効化 + FW 5985 + LocalAccountTokenFilterPolicy=1。setup_l1 の前に実行。
 
 ## 主要スクリプト
 - `bootstrap.ps1` — 単一エントリ。
+- `scripts/Initialize-L1Network.ps1` — L1 を CtrlNAT 接続 + 静的IP/WinRM (PS Direct, setup_l1 前)。
 - `scripts/Copy-GoldenToL1.ps1` — golden を L1 (L:\images) へ Copy-VMFile 配送。
 - `scripts/Add-L1LabStore.ps1` — L1 にラボストア (L:) を増設・初期化。
-- `control-node/Invoke-Ansible.ps1` — 制御VMへ同期し ansible-playbook 実行。
+- `control-node/Invoke-Ansible.ps1` — 制御VMへ同期し collection/pywinrm 導入 + ansible-playbook 実行。
 - `tools/resolve.py` — L1+L2 宣言 → build/resolved.json に展開・検証。
