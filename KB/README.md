@@ -30,3 +30,4 @@ Windows golden / S2D まわりの**汎用ノウハウ集**でもあります。
 | [0008](0008-win-powershell-gotchas.md) | ansible win_powershell の落とし穴 | 引数は文字列 / エラー握りつぶし / ロケール |
 | [0009](0009-control-vm-rootfs-resize.md) | cloud イメージの rootfs が小さすぎる | 起動前に VHD 拡張 |
 | [0010](0010-build-order-hyperv-first.md) | L1 内 Hyper-V は labstore/L2 より先に入れる | `Set-VMHost`/`New-VM` の前提 |
+| [0011](0011-control-vm-memory-ssh-hang.md) | 制御VMのメモリ枯渇で scp/ansible が無限ハング | 動的メモリ下限 + SSH keepalive |

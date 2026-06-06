@@ -33,6 +33,11 @@ $sshOpts = @("-i", $key,
     "-o", "StrictHostKeyChecking=no",
     "-o", "UserKnownHostsFile=$env:TEMP\nl_known_ctrl",
     "-o", "ConnectTimeout=$ConnectTimeout",
+    # 確立後に転送が固まった場合 (例: 制御 VM のメモリ枯渇でスラッシュ) 無限待ちになるのを防ぐ。
+    # 15s ごとに生存確認し、8 回連続無応答 (=120s) で切断して scp/ssh を非ゼロ終了させる。
+    # こうすると Invoke-Ansible 側の throw が発火し、ハングではなく fail-fast になる (KB/0011)。
+    "-o", "ServerAliveInterval=15",
+    "-o", "ServerAliveCountMax=8",
     "-o", "BatchMode=yes")
 
 foreach ($pair in $Push) {

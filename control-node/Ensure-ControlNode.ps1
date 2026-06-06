@@ -95,8 +95,12 @@ if (-not (Get-VM -Name $Name -ErrorAction SilentlyContinue)) {
     Add-VMHardDiskDrive -VMName $Name -Path $seed
     Set-VMProcessor -VMName $Name -Count $Cpu
     Set-VMFirmware -VMName $Name -EnableSecureBoot Off   # Linux Gen2 のため
-    Set-VMMemory -VMName $Name -DynamicMemoryEnabled $true
-    Log "VM '$Name' を作成 (Gen2, $Cpu vCPU, ${MemoryGB}GB, SecureBoot Off)"
+    # 動的メモリの下限を明示する。既定 (Minimum 512MB) のままだとアイドル時にバルーンで
+    # 512MB まで縮み、その状態で scp / ansible-playbook が走ると VM がスラッシュして
+    # SSH 転送がスタックする (KB/0011)。下限 2GB / 上限=Startup で常に応答可能に保つ。
+    Set-VMMemory -VMName $Name -DynamicMemoryEnabled $true `
+        -MinimumBytes 2GB -StartupBytes ([int64]$MemoryGB*1GB) -MaximumBytes ([int64]$MemoryGB*1GB)
+    Log "VM '$Name' を作成 (Gen2, $Cpu vCPU, ${MemoryGB}GB[min2GB], SecureBoot Off)"
 } else {
     Log "VM '$Name' は既に存在 (no-change)"
 }
