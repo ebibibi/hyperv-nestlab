@@ -30,11 +30,35 @@ if (-not $IsoDir) { $IsoDir = Join-Path (Join-Path $RepoRoot "assets") "iso" }
 New-Item -ItemType Directory -Force -Path $IsoDir | Out-Null
 function Log($m){ Write-Host "  [win-iso] $m" -ForegroundColor DarkCyan }
 
-# 冪等: 既に評価版 ISO があればスキップ
+# ISO をマウントして install.wim/esd の有無で妥当性を確認する。
+# Mount-DiskImage は拡張子で仮想ディスクプロバイダを決めるため、必ず .iso に対して行う。
+function Test-IsoValid([string]$Path) {
+    if (-not (Test-Path $Path) -or (Get-Item $Path).Length -lt 1GB) { return $false }
+    $valid = $false
+    try {
+        $img = Mount-DiskImage -ImagePath $Path -PassThru -ErrorAction Stop
+        $vol = ($img | Get-Volume).DriveLetter
+        $valid = [bool](@("$vol`:\sources\install.wim","$vol`:\sources\install.esd") |
+                        Where-Object { Test-Path $_ } | Select-Object -First 1)
+    } catch {
+        $valid = $false
+    } finally {
+        Dismount-DiskImage -ImagePath $Path -ErrorAction SilentlyContinue | Out-Null
+    }
+    return $valid
+}
+
+# 冪等: 既に有効な評価版 ISO があればスキップ。サイズだけでなくマウント検証もする
+# (前回の検証バグで消えていた「正常な ISO の作り直し」を防ぐ / 壊れた ISO は次回ここで除去)。
 $existing = Get-ChildItem -Path $IsoDir -Filter *.iso -ErrorAction SilentlyContinue |
             Where-Object { $_.Name -match '(?i)SERVER_EVAL|server.*2025|2025.*server|_SERVER_' -and $_.Length -gt 1GB } |
             Select-Object -First 1
-if ($existing) { Log "ISO は既に配置済み (no-change): $($existing.Name)"; exit 0 }
+if ($existing) {
+    Log "既存 ISO を検証中: $($existing.Name)"
+    if (Test-IsoValid $existing.FullName) { Log "有効な ISO が配置済み (no-change): $($existing.Name)"; exit 0 }
+    Log "既存 ISO が無効でした。除去して取り直します: $($existing.Name)"
+    Remove-Item $existing.FullName -Force -ErrorAction SilentlyContinue
+}
 
 $dest = Join-Path $IsoDir $IsoName
 $tmp  = "$dest.downloading"
@@ -58,17 +82,13 @@ if ($len -lt 1GB) { Remove-Item $tmp -Force -ErrorAction SilentlyContinue; throw
 if (Test-Path $dest) { Remove-Item $dest -Force -ErrorAction SilentlyContinue }
 Move-Item -Path $tmp -Destination $dest -Force
 
-# 妥当性検証: マウントして install.wim/esd の存在を確認
+# 妥当性検証: マウントして install.wim/esd の存在を確認。
+# 検証に失敗しても 7-8GB のダウンロードは消さない (残して中断)。次回起動時の冪等チェックが
+# 再検証し、本当に壊れていればそこで作り直すので、無駄な再ダウンロードを防げる。
 Log "ISO をマウントして検証中..."
-$ok = $false
-try {
-    $img = Mount-DiskImage -ImagePath $dest -PassThru
-    $vol = ($img | Get-Volume).DriveLetter
-    $ok = @("$vol`:\sources\install.wim","$vol`:\sources\install.esd") | Where-Object { Test-Path $_ } | Select-Object -First 1
-} finally {
-    Dismount-DiskImage -ImagePath $dest -ErrorAction SilentlyContinue | Out-Null
+if (-not (Test-IsoValid $dest)) {
+    throw "ダウンロードした ISO に install.wim/esd がありません。URL/取得結果を確認してください。ファイルは残してあります: $dest (壊れている場合は削除してから再実行)"
 }
-if (-not $ok) { Remove-Item $dest -Force -ErrorAction SilentlyContinue; throw "ダウンロードした ISO に install.wim/esd がありません。URL/取得結果を確認してください。" }
 
 Log "完了: $dest ($([math]::Round((Get-Item $dest).Length/1GB,2))GB)"
 exit 0
