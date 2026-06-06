@@ -31,7 +31,10 @@
       ansible.windows.win_reboot:
         reboot_timeout: 600
 
-    - name: L1 内に NAT 仮想スイッチ (LabNAT) を冪等作成
+    - name: L1 内に仮想スイッチ (LabNAT) を冪等作成 (ルーテッド / NATなし)
+      # LabNAT は L1 内の Internal スイッチ + L1 をゲートウェイにしたルーテッドな L2 ネット。
+      # 制御 VM は L1 ルータ経由でここへ到達する。NetNat を張ると戻りトラフィックを SNAT して
+      # ルーティングを壊す (制御→L2 がタイムアウト) ため NAT は使わず、既存があれば除去する。
       vars:
         sw: "{{ l1.nat.switch }}"
         subnet: "{{ l1.nat.subnet }}"
@@ -48,8 +51,9 @@
           if (-not (Get-NetIPAddress -InterfaceAlias $alias -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object IPAddress -eq $HostIp)) {
             New-NetIPAddress -InterfaceAlias $alias -IPAddress $HostIp -PrefixLength $prefix | Out-Null; $Ansible.Changed = $true
           }
-          if (-not (Get-NetNat -Name "$Sw-NAT" -ErrorAction SilentlyContinue)) {
-            New-NetNat -Name "$Sw-NAT" -InternalIPInterfaceAddressPrefix $Subnet | Out-Null; $Ansible.Changed = $true
+          # NAT があるとルーティングを壊すので除去 (冪等収束)。
+          if (Get-NetNat -Name "$Sw-NAT" -ErrorAction SilentlyContinue) {
+            Remove-NetNat -Name "$Sw-NAT" -Confirm:$false; $Ansible.Changed = $true
           }
         parameters:
           Sw: "{{ sw }}"
