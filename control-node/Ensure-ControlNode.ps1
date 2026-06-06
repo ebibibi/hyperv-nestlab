@@ -94,6 +94,9 @@ if (-not $WaitReady) { exit 0 }
 
 # --- 疎通待ち + ansible 検証 ---
 Log "SSH 疎通待ち (最大 ${TimeoutSec}s, $ip)..."
+# 制御 VM を作り直すとホスト鍵が変わり、古い known_hosts と衝突して警告が出る。消しておく。
+$knownHosts = Join-Path $env:TEMP 'nl_known'
+if (Test-Path $knownHosts) { Remove-Item $knownHosts -Force -ErrorAction SilentlyContinue }
 $sw = [System.Diagnostics.Stopwatch]::StartNew()
 $sshOpts = @("-i", $key, "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=$env:TEMP\nl_known", "-o", "ConnectTimeout=5")
 $ready = $false
