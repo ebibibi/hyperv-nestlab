@@ -11,7 +11,9 @@
 - 大容量・機密物 (VHDX/ISO/鍵/data/build) は `.gitignore` 済み。コミットしない。
 
 ## リポジトリの場所 (重要)
-- **正本は `D:\nestedhyper-v`**。GitHub: https://github.com/ebibibi/hyperv-nestlab (origin/master)。
+- **開発用(正本)は `D:\hyperv-nestlab-dev`**。GitHub: https://github.com/ebibibi/hyperv-nestlab (origin/master)。
+  - 旧名 `D:\nestedhyper-v` から改名済み (ユーザーのテスト用 clone と区別するため)。
+- `D:\nestlab-test` 等はユーザーが GitHub から clone した**テスト用**。開発側からは触らない。
 - `C:\Users\Administrator\nestedhyper-v` は**古い**。触らない。
 - C: は空き容量が少ない。VHDX 等の実体は必ず D: (data root) へ。
 
