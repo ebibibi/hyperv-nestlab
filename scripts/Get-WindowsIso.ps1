@@ -52,18 +52,23 @@ try {
 $len = (Get-Item $tmp).Length
 if ($len -lt 1GB) { Remove-Item $tmp -Force -ErrorAction SilentlyContinue; throw "ダウンロードした ISO が小さすぎます ($([math]::Round($len/1MB,1))MB)。URL を確認してください。" }
 
+# 先に最終名 (.iso) へ確定してから検証する。
+# Mount-DiskImage は拡張子で仮想ディスクプロバイダを決めるため、.downloading のままだと
+# 「仮想ディスク サポート プロバイダーが見つかりませんでした」で失敗する。
+if (Test-Path $dest) { Remove-Item $dest -Force -ErrorAction SilentlyContinue }
+Move-Item -Path $tmp -Destination $dest -Force
+
 # 妥当性検証: マウントして install.wim/esd の存在を確認
 Log "ISO をマウントして検証中..."
 $ok = $false
 try {
-    $img = Mount-DiskImage -ImagePath $tmp -PassThru
+    $img = Mount-DiskImage -ImagePath $dest -PassThru
     $vol = ($img | Get-Volume).DriveLetter
     $ok = @("$vol`:\sources\install.wim","$vol`:\sources\install.esd") | Where-Object { Test-Path $_ } | Select-Object -First 1
 } finally {
-    Dismount-DiskImage -ImagePath $tmp -ErrorAction SilentlyContinue | Out-Null
+    Dismount-DiskImage -ImagePath $dest -ErrorAction SilentlyContinue | Out-Null
 }
-if (-not $ok) { Remove-Item $tmp -Force -ErrorAction SilentlyContinue; throw "ダウンロードした ISO に install.wim/esd がありません。URL/取得結果を確認してください。" }
+if (-not $ok) { Remove-Item $dest -Force -ErrorAction SilentlyContinue; throw "ダウンロードした ISO に install.wim/esd がありません。URL/取得結果を確認してください。" }
 
-Move-Item -Path $tmp -Destination $dest -Force
 Log "完了: $dest ($([math]::Round((Get-Item $dest).Length/1GB,2))GB)"
 exit 0
