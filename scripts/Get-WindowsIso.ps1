@@ -48,19 +48,17 @@ function Test-IsoValid([string]$Path) {
     return $valid
 }
 
-# 冪等: 既に有効な評価版 ISO があればスキップ。サイズだけでなくマウント検証もする
-# (前回の検証バグで消えていた「正常な ISO の作り直し」を防ぐ / 壊れた ISO は次回ここで除去)。
-$existing = Get-ChildItem -Path $IsoDir -Filter *.iso -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -match '(?i)SERVER_EVAL|server.*2025|2025.*server|_SERVER_' -and $_.Length -gt 1GB } |
-            Select-Object -First 1
-if ($existing) {
-    Log "既存 ISO を検証中: $($existing.Name)"
-    if (Test-IsoValid $existing.FullName) { Log "有効な ISO が配置済み (no-change): $($existing.Name)"; exit 0 }
-    Log "既存 ISO が無効でした。除去して取り直します: $($existing.Name)"
-    Remove-Item $existing.FullName -Force -ErrorAction SilentlyContinue
-}
-
 $dest = Join-Path $IsoDir $IsoName
+
+# 冪等: 「この IsoName の」ISO が既に有効ならスキップ。サイズだけでなくマウント検証もする。
+# 言語別 ISO を扱うため、別言語の ISO が存在してもこの言語の取得はスキップしないこと
+# (以前は server-2025 をパターンで広く拾い、ja-jp 要求時に en-us を見つけてスキップしていた)。
+if (Test-Path $dest) {
+    Log "既存 ISO を検証中: $IsoName"
+    if (Test-IsoValid $dest) { Log "有効な ISO が配置済み (no-change): $IsoName"; exit 0 }
+    Log "既存 ISO が無効でした。除去して取り直します: $IsoName"
+    Remove-Item $dest -Force -ErrorAction SilentlyContinue
+}
 $tmp  = "$dest.downloading"
 if (Test-Path $tmp) { Remove-Item $tmp -Force -ErrorAction SilentlyContinue }
 
