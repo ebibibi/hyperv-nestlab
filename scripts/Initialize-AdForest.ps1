@@ -81,9 +81,15 @@ try {
         # ===== DC =====
         # まずフォレスト既存判定 (ドメイン管理者で)。昇格済み DC にはローカル管理者が
         # 存在しないため、ローカル資格情報での OOBE プローブより先に行う。
+        # Get-ADDomain は ADWS 依存。入れ子の遅い起動では ADWS が自動起動しきれず Stopped の
+        # ことがある (フォレストは稼働しているのに判定が偽になる)。判定前に必ず起動を試みる。
         $forestExists=$false
         try {
-            $r = In-Guest $dcName $domCred { try { (Get-ADDomain).DNSRoot } catch { $null } } @() 90
+            $r = In-Guest $dcName $domCred {
+                try { Set-Service ADWS -StartupType Automatic -EA SilentlyContinue
+                      if ((Get-Service ADWS -EA SilentlyContinue).Status -ne 'Running') { Start-Service ADWS -EA SilentlyContinue } } catch {}
+                try { (Get-ADDomain).DNSRoot } catch { $null }
+            } @() 120
             if ($r -eq $fqdn) { $forestExists=$true }
         } catch {}
 
@@ -122,11 +128,16 @@ try {
             Restart-VM -Name $dcName -Force
             Start-Sleep 30
 
-            W "DC ${dcName}: AD サービス起動を待機"
-            $dl=(Get-Date).AddSeconds(600); $up=$false
+            W "DC ${dcName}: AD サービス起動を待機 (ADWS を明示起動しつつ)"
+            $dl=(Get-Date).AddSeconds(900); $up=$false
             while((Get-Date) -lt $dl){
                 try {
-                    $r = In-Guest $dcName $domCred { try { (Get-ADDomain).DNSRoot } catch { $null } } @() 60
+                    # 昇格直後は ADWS が自動起動しきれないことがあるため毎回起動を試みてから判定。
+                    $r = In-Guest $dcName $domCred {
+                        try { Set-Service ADWS -StartupType Automatic -EA SilentlyContinue
+                              if ((Get-Service ADWS -EA SilentlyContinue).Status -ne 'Running') { Start-Service ADWS -EA SilentlyContinue } } catch {}
+                        try { (Get-ADDomain).DNSRoot } catch { $null }
+                    } @() 90
                     if ($r -eq $fqdn) { $up=$true; break }
                 } catch {}
                 Start-Sleep 15
