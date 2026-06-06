@@ -96,12 +96,15 @@
           $ErrorActionPreference='Stop'
           $Ansible.Changed = $false
           $nodes = $NodesCsv.Split(',')
-          $existing = Get-Cluster -Name $Name -ErrorAction SilentlyContinue
+          # ローカル(メンバ)のクラスタを見る。Get-Cluster -Name は名前を DNS 解決しに行き
+          # 作成直後は "そのようなホストは不明です" で失敗するため使わない。
+          $existing = Get-Cluster -ErrorAction SilentlyContinue
           if (-not $existing) {
             New-Cluster -Name $Name -Node $nodes -StaticAddress $Ip -NoStorage -Force | Out-Null
             $Ansible.Changed = $true
+            Start-Sleep 10
           }
-          $Ansible.Result = @{ cluster = (Get-Cluster -Name $Name).Name }
+          $Ansible.Result = @{ cluster = (Get-Cluster).Name }
         parameters:
           Name: "{{ cl.name }}"
           Ip: "{{ cl.ip }}"
@@ -113,16 +116,15 @@
       ansible.windows.win_powershell:
         error_action: stop
         script: |
-          param([string]$Name,[string]$Share)
+          param([string]$Share)
           $ErrorActionPreference='Stop'
           $Ansible.Changed = $false
-          $q = Get-ClusterQuorum -Cluster $Name
+          $q = Get-ClusterQuorum   # ローカルクラスタ
           if ($q.QuorumResource -notlike '*Witness*' -and $q.QuorumType -ne 'NodeAndFileShareMajority') {
-            Set-ClusterQuorum -Cluster $Name -FileShareWitness $Share | Out-Null
+            Set-ClusterQuorum -FileShareWitness $Share | Out-Null
             $Ansible.Changed = $true
           }
         parameters:
-          Name: "{{ cl.name }}"
           Share: "\\\\{{ cl.witness.host }}\\ClusterWitness"
 
     - name: S2D を有効化 (冪等)
@@ -166,12 +168,12 @@
       ansible.windows.win_powershell:
         error_action: stop
         script: |
-          param([string]$ClName,[string]$SofsName,[string]$ShareName,[string]$VolName)
+          param([string]$SofsName,[string]$ShareName,[string]$VolName)
           $ErrorActionPreference='Stop'
           $Ansible.Changed = $false
-          # SOFS 役割
-          if (-not (Get-ClusterGroup -Cluster $ClName -Name $SofsName -ErrorAction SilentlyContinue)) {
-            Add-ClusterScaleOutFileServerRole -Name $SofsName -Cluster $ClName | Out-Null
+          # SOFS 役割 (ローカルクラスタに対して。-Cluster 名指定は DNS 解決で失敗しうるため使わない)
+          if (-not (Get-ClusterGroup -Name $SofsName -ErrorAction SilentlyContinue)) {
+            Add-ClusterScaleOutFileServerRole -Name $SofsName | Out-Null
             $Ansible.Changed = $true
             Start-Sleep 5
           }
@@ -187,7 +189,6 @@
           }
           $Ansible.Result = @{ sofs = $SofsName; csv = ($csv.FullName) }
         parameters:
-          ClName: "{{ cl.name }}"
           SofsName: "{{ cl.name }}-sofs"
           ShareName: "share1"
           VolName: "{{ (cl.roles | first).type }}vol"
