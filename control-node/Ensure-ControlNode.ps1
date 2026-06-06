@@ -70,7 +70,13 @@ if (-not (Get-VM -Name $Name -ErrorAction SilentlyContinue)) {
     $dir = Join-Path (Join-Path $dataRoot "vms") $Name
     New-Item -ItemType Directory -Force -Path $dir | Out-Null
     $osDisk = Join-Path $dir "$Name-os.vhdx"
-    if (-not (Test-Path $osDisk)) { Copy-Item $ubuntu $osDisk }
+    if (-not (Test-Path $osDisk)) {
+        Copy-Item $ubuntu $osDisk
+        # Ubuntu cloud イメージの rootfs は ~3.5GB と小さく、pip(ansible/pywinrm) +
+        # collection + 繰り返す scp 同期 + ~/.ansible/tmp で「No space left on device」になる。
+        # 初回起動前にディスクを拡張しておけば cloud-init の growpart が rootfs を伸ばす。
+        Resize-VHD -Path $osDisk -SizeBytes 32GB
+    }
 
     $seed = Join-Path $dir "$Name-seed.vhdx"
     & (Join-Path $RepoRoot "scripts\New-CloudInitSeed.ps1") `
