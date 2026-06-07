@@ -31,3 +31,5 @@ Windows golden / S2D まわりの**汎用ノウハウ集**でもあります。
 | [0009](0009-control-vm-rootfs-resize.md) | cloud イメージの rootfs が小さすぎる | 起動前に VHD 拡張 |
 | [0010](0010-build-order-hyperv-first.md) | L1 内 Hyper-V は labstore/L2 より先に入れる | `Set-VMHost`/`New-VM` の前提 |
 | [0011](0011-control-vm-memory-ssh-hang.md) | 制御VMのメモリ枯渇で scp/ansible が無限ハング | 動的メモリ下限 + SSH keepalive |
+| [0012](0012-l1-uplink-pick-by-mac.md) | L1 制御IPが内部スイッチ側に載って No route to host | アップリンクは MAC で一意特定 |
+| [0013](0013-labstore-reattach-offline.md) | 再アタッチしたラボストアがオフラインで RAW 扱いされ失敗 | 存在判定前にオンライン化 |

@@ -65,6 +65,12 @@ if ($na.SwitchName -ne $Switch) {
 Get-VMNetworkAdapter -VMName $VMName | Where-Object { $_.MacAddressSpoofing -ne 'On' } |
     Set-VMNetworkAdapter -MacAddressSpoofing On
 
+# CtrlNAT アップリンクの MAC を L0 側から確定し、L1 内でこのアダプタだけを対象にする。
+# 「最初の Up な NIC」で選ぶと setup_l1 が作る内部スイッチ vEthernet(LabNAT) が出来た後の
+# 再実行で誤選択し、制御 IP を別アダプタへ載せ替えてしまう (KB/0012)。
+$mac = (Get-VMNetworkAdapter -VMName $VMName | Where-Object { $_.SwitchName -eq $Switch } | Select-Object -First 1).MacAddress
+if (-not $mac -or $mac -eq '000000000000') { throw "CtrlNAT アップリンクの MAC を確定できません ($Switch)。" }
+
 if ($vm.State -ne 'Running') { Log "L1 を起動"; Start-VM -Name $VMName | Out-Null }
 
 # --- L1: PowerShell Direct で静的 IP + WinRM を構成 ---
@@ -81,18 +87,30 @@ if (-not $session) { throw "L1 へ PowerShell Direct セッションを張れま
 
 try {
     $result = Invoke-Command -Session $session -ScriptBlock {
-        param($Ip,$Pfx,$Gw,$Dns)
+        param($Ip,$Pfx,$Gw,$Dns,$Mac)
         $ErrorActionPreference = 'Stop'
         $out = @()
 
-        # 接続中の NIC を特定 (CtrlNAT へ繋いだ唯一のアップリンク)
-        $a = Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'Up' } | Select-Object -First 1
-        if (-not $a) {
-            # リンクアップ待ち
-            for ($i=0; $i -lt 15 -and -not $a; $i++) { Start-Sleep 2; $a = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | Select-Object -First 1 }
+        # CtrlNAT アップリンクを MAC で一意特定する (KB/0012)。
+        # 「最初の Up な NIC」だと、setup_l1 が作る内部スイッチ vEthernet(LabNAT) が出来た後の
+        # 再実行で誤選択し、制御 IP を LabNAT 側に載せ替えて ARP 応答が割れ「No route to host」に
+        # なる。L0 側 L1 仮想 NIC (CtrlNAT 接続) の MAC と一致するアダプタのみを対象にする。
+        $want = ($Mac -replace '[-:]','').ToUpper()
+        $a = $null
+        for ($i=0; $i -lt 15 -and -not $a; $i++) {
+            $a = Get-NetAdapter -ErrorAction SilentlyContinue |
+                 Where-Object { ($_.MacAddress -replace '[-:]','').ToUpper() -eq $want -and $_.Status -eq 'Up' } |
+                 Select-Object -First 1
+            if (-not $a) { Start-Sleep 2 }
         }
-        if (-not $a) { throw "L1 内に Up な NIC が見つかりません。" }
+        if (-not $a) { throw "L1 内に CtrlNAT アップリンク (MAC $want) が見つかりません。" }
         $idx = $a.ifIndex
+
+        # 他アダプタに紛れ込んだ制御 IP を剥がす。過去の誤選択で vEthernet(LabNAT) 等に
+        # 載っていると ARP 応答が割れて到達不能になるため、正しいアダプタ以外から除去する。
+        Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+            Where-Object { $_.IPAddress -eq $Ip -and $_.InterfaceIndex -ne $idx } |
+            Remove-NetIPAddress -Confirm:$false -ErrorAction SilentlyContinue
 
         # 静的 IP (冪等)
         $has = Get-NetIPAddress -InterfaceIndex $idx -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -eq $Ip }
@@ -130,7 +148,7 @@ try {
 
         $out += ("IP 確認: " + ((Get-NetIPAddress -InterfaceIndex $idx -AddressFamily IPv4 | ForEach-Object { $_.IPAddress }) -join ','))
         $out
-    } -ArgumentList $ip,$pfx,$HostIp,$Dns
+    } -ArgumentList $ip,$pfx,$HostIp,$Dns,$mac
 
     $result | ForEach-Object { Log $_ }
 }

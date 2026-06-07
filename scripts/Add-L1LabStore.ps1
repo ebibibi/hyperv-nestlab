@@ -86,6 +86,19 @@ try {
         # 既に LabStore ボリュームがあるか
         $vol = Get-Volume | Where-Object { $_.FileSystemLabel -eq 'LabStore' }
         if (-not $vol) {
+            # 既存のラボストアディスクは、ホットアドで再アタッチされるとオフライン (かつ読取専用)
+            # で復帰することがある。その状態だと LabStore ボリュームが見えず、GPT なので RAW にも
+            # 該当せず両分岐から漏れて誤って失敗する (KB/0013)。オフラインディスクをオンライン化
+            # してから再評価する (まだ LabStore が無いときだけ → 初回 RAW 構築の邪魔をしない)。
+            $offline = Get-Disk | Where-Object { $_.OperationalStatus -ne 'Online' -or $_.IsOffline }
+            foreach ($d in $offline) {
+                try { Set-Disk -Number $d.Number -IsReadOnly $false -ErrorAction SilentlyContinue } catch {}
+                try { Set-Disk -Number $d.Number -IsOffline $false -ErrorAction SilentlyContinue } catch {}
+                $out += "ディスク #$($d.Number) をオンライン化"
+            }
+            if ($offline) { Start-Sleep -Seconds 2; $vol = Get-Volume | Where-Object { $_.FileSystemLabel -eq 'LabStore' } }
+        }
+        if (-not $vol) {
             # RAW ディスクを探す (未初期化)
             $raw = Get-Disk | Where-Object { $_.PartitionStyle -eq 'RAW' } | Sort-Object Number | Select-Object -First 1
             if (-not $raw) { throw "L1 内に未初期化 (RAW) ディスクが見つかりません。ホットアドを確認してください。" }
