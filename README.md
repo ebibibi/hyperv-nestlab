@@ -51,6 +51,10 @@ L0  物理 Hyper-V ホスト  ── あなたが用意する唯一の前提
 > (Windows=二段 PowerShell Direct / Linux=L1 から SSH)。PowerShell Direct は VMBus 経由で
 > 物理ネットワークに依存せず、再起動をまたぐ再接続も確実に扱える (原則①)。
 
+> **構築後、どの VM にどう入るか**（SSH / WinRM / Hyper-V マネージャー / PowerShell Direct の
+> 使い分け、接続マトリクス、トポロジ図）は [`docs/access-guide.md`](docs/access-guide.md) を参照。
+> `bootstrap.ps1` 完了時にも実環境の値で接続サマリ (`Write-ConnectionInfo`) が表示される。
+
 ---
 
 ## クイックスタート
@@ -79,6 +83,10 @@ L0  物理 Hyper-V ホスト  ── あなたが用意する唯一の前提
 5. L1 内 Hyper-V+LabNAT (Ansible) → L2 作成 (Ansible) → AD 構築 (PowerShell Direct)
 
 再実行すれば全工程が冪等に収束します (no-change が受け入れ条件)。
+
+完了すると、建った環境への接続先・資格情報・接続例が一覧表示されます
+(`Write-ConnectionInfo`)。各 VM への入り方の詳細・図解は
+[`docs/access-guide.md`](docs/access-guide.md) を参照。
 
 ---
 
