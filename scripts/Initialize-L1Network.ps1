@@ -65,13 +65,24 @@ if ($na.SwitchName -ne $Switch) {
 Get-VMNetworkAdapter -VMName $VMName | Where-Object { $_.MacAddressSpoofing -ne 'On' } |
     Set-VMNetworkAdapter -MacAddressSpoofing On
 
+if ($vm.State -ne 'Running') { Log "L1 を起動"; Start-VM -Name $VMName | Out-Null }
+
 # CtrlNAT アップリンクの MAC を L0 側から確定し、L1 内でこのアダプタだけを対象にする。
+# 動的 MAC は停止中の VM では 000000000000 のことがあるため、起動後に割り当てを待つ。
 # 「最初の Up な NIC」で選ぶと setup_l1 が作る内部スイッチ vEthernet(LabNAT) が出来た後の
 # 再実行で誤選択し、制御 IP を別アダプタへ載せ替えてしまう (KB/0012)。
-$mac = (Get-VMNetworkAdapter -VMName $VMName | Where-Object { $_.SwitchName -eq $Switch } | Select-Object -First 1).MacAddress
-if (-not $mac -or $mac -eq '000000000000') { throw "CtrlNAT アップリンクの MAC を確定できません ($Switch)。" }
-
-if ($vm.State -ne 'Running') { Log "L1 を起動"; Start-VM -Name $VMName | Out-Null }
+$mac = $null
+$macDeadline = (Get-Date).AddSeconds(30)
+while ((Get-Date) -lt $macDeadline) {
+    $mac = (Get-VMNetworkAdapter -VMName $VMName |
+        Where-Object { $_.SwitchName -eq $Switch } |
+        Select-Object -First 1).MacAddress
+    if ($mac -and $mac -notmatch '^0+$') { break }
+    Start-Sleep -Seconds 1
+}
+if (-not $mac -or $mac -match '^0+$') {
+    throw "CtrlNAT アップリンクの MAC を起動後も確定できません ($Switch)。"
+}
 
 # --- L1: PowerShell Direct で静的 IP + WinRM を構成 ---
 $ip  = $IPCidr.Split('/')[0]
