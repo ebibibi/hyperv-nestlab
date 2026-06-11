@@ -44,6 +44,110 @@ function Write-Ok    { param($m) Write-Host "  OK  $m" -ForegroundColor Green }
 function Write-Warn2 { param($m) Write-Host "  !!  $m" -ForegroundColor Yellow }
 function Fail        { param($m) Write-Host "  NG  $m" -ForegroundColor Red; exit 1 }
 
+function Write-ConnectionInfo {
+    param(
+        [Parameter(Mandatory)] $Model,
+        [Parameter(Mandatory)] [string] $AdminPassword
+    )
+
+    $hostCredPath = Join-Path $RepoRoot "build\host-cred.json"
+    $sshKeyPath = Join-Path $RepoRoot "build\ssh\id_ed25519"
+    $hostCred = if (Test-Path $hostCredPath) {
+        Get-Content $hostCredPath -Raw | ConvertFrom-Json
+    } else {
+        $null
+    }
+
+    Write-Host ""
+    Write-Host "=============== 接続情報・認証情報 ===============" -ForegroundColor Magenta
+    Write-Warn2 "以下には平文パスワードを表示します。画面共有・ログ保存時は取り扱いに注意してください。"
+
+    if ($hostCred) {
+        Write-Host ""
+        Write-Host "[L0: 物理 Hyper-V ホスト]" -ForegroundColor Cyan
+        Write-Host ("  接続先     : {0}:5985" -f $hostCred.host_addr)
+        Write-Host "  実行元     : 制御 VM"
+        Write-Host "  プロトコル : WinRM / HTTP / NTLM"
+        Write-Host ("  ユーザー   : {0}" -f $hostCred.user)
+        Write-Host ("  パスワード : {0}" -f $hostCred.password)
+        Write-Host ("  接続例     : Enter-PSSession -ComputerName {0} -Authentication Negotiate -Credential (Get-Credential '{1}')" -f $hostCred.host_addr, $hostCred.user)
+    } else {
+        Write-Warn2 "L0 資格情報ファイルが見つかりません: $hostCredPath"
+    }
+
+    Write-Host ""
+    Write-Host "[制御 VM]" -ForegroundColor Cyan
+    Write-Host "  接続先     : 10.20.0.10:22"
+    Write-Host "  実行元     : L0 物理ホスト"
+    Write-Host "  プロトコル : SSH 公開鍵認証"
+    Write-Host "  ユーザー   : labadmin"
+    Write-Host ("  秘密鍵     : {0}" -f $sshKeyPath)
+    Write-Host ("  接続例     : ssh -i `"{0}`" labadmin@10.20.0.10" -f $sshKeyPath)
+
+    Write-Host ""
+    Write-Host ("[L1: {0}]" -f $Model.l1.name) -ForegroundColor Cyan
+    Write-Host "  接続先     : 10.20.0.20:5985"
+    Write-Host "  実行元     : L0 物理ホストまたは制御 VM"
+    Write-Host "  プロトコル : WinRM / HTTP / NTLM"
+    Write-Host "  ユーザー   : Administrator"
+    Write-Host ("  パスワード : {0}" -f $AdminPassword)
+    Write-Host "  接続例     : Enter-PSSession -ComputerName 10.20.0.20 -Authentication Negotiate -Credential (Get-Credential 'Administrator')"
+
+    Write-Host ""
+    Write-Host "[Hyper-V マネージャーで L2 VM を操作]" -ForegroundColor Cyan
+    Write-Host "  1. L0 の Hyper-V マネージャーで L1 VM のコンソールを開く"
+    Write-Host ("     GUI      : Hyper-V マネージャー > {0} > 接続" -f $Model.l1.name)
+    Write-Host ("     コマンド : vmconnect.exe localhost `"{0}`"" -f $Model.l1.name)
+    Write-Host "  2. L1 に Administrator でサインイン"
+    Write-Host ("     パスワード: {0}" -f $AdminPassword)
+    Write-Host "  3. L1 内で Hyper-V マネージャー (virtmgmt.msc) を開く"
+    Write-Host "     VM 一覧  : Get-VM"
+    if (@($Model.vms).Count -gt 0) {
+        Write-Host ("     L2 VM    : {0}" -f ((@($Model.vms) | ForEach-Object { $_.name }) -join ", "))
+        Write-Host "     接続例   : vmconnect.exe localhost `"<L2 VM 名>`""
+    } else {
+        Write-Host "     L2 VM    : なし"
+    }
+    Write-Host "  ※ L2 の電源・設定・コンソール操作は L1 内の Hyper-V マネージャーで行います。"
+
+    foreach ($vm in @($Model.vms)) {
+        $ip = if ($vm.nics -and $vm.nics[0].ip) { $vm.nics[0].ip } else { "(IP 未設定)" }
+        $guestIsLinux = $vm.os -match "ubuntu|debian|linux|rocky|alma"
+
+        Write-Host ""
+        Write-Host ("[L2: {0}]" -f $vm.name) -ForegroundColor Cyan
+        Write-Host ("  コンソール : L1 内で vmconnect.exe localhost `"{0}`"" -f $vm.name)
+        if ($guestIsLinux) {
+            Write-Host ("  接続先     : {0}:22" -f $ip)
+            Write-Host "  実行元     : 制御 VM"
+            Write-Host "  プロトコル : SSH 公開鍵認証"
+            Write-Host "  ユーザー   : labadmin"
+            Write-Host ("  秘密鍵     : {0}" -f $sshKeyPath)
+            Write-Host ("  接続例     : ssh -i `"{0}`" labadmin@{1}" -f $sshKeyPath, $ip)
+        } else {
+            $isDomainMember = $Model.domain -and ($vm.domain_join -or $vm.provision.forest)
+            $user = if ($isDomainMember) { "$($Model.domain.netbios)\Administrator" } else { "Administrator" }
+            $transport = if ($isDomainMember) { "WinRM / HTTP / CredSSP または NTLM" } else { "WinRM / HTTP / NTLM" }
+            Write-Host ("  接続先     : {0}:5985" -f $ip)
+            Write-Host "  実行元     : 制御 VM"
+            Write-Host ("  プロトコル : {0}" -f $transport)
+            Write-Host ("  ユーザー   : {0}" -f $user)
+            Write-Host ("  パスワード : {0}" -f $AdminPassword)
+            Write-Host ("  接続例     : Enter-PSSession -ComputerName {0} -Authentication Negotiate -Credential (Get-Credential '{1}')" -f $ip, $user)
+        }
+    }
+
+    if ($Model.domain) {
+        Write-Host ""
+        Write-Host "[Active Directory]" -ForegroundColor Cyan
+        Write-Host ("  ドメイン管理者 : {0}\Administrator" -f $Model.domain.netbios)
+        Write-Host ("  パスワード     : {0}" -f $AdminPassword)
+        Write-Host ("  DSRM パスワード: {0}" -f $Model.domain.dsrm_password)
+    }
+
+    Write-Host "====================================================" -ForegroundColor Magenta
+}
+
 function Resolve-Python {
     foreach ($c in @("python", "python3", "py")) {
         $cmd = Get-Command $c -ErrorAction SilentlyContinue
@@ -268,3 +372,4 @@ if ($model.clusters -and $model.clusters.Count -gt 0) {
 Write-Host ""
 Write-Ok "完了: 宣言した環境が一括で構築されました (L1 -> L2 -> AD -> Cluster)。"
 Write-Host "  再実行すれば全工程が冪等に収束します (no-change が受け入れ条件)。" -ForegroundColor DarkGray
+Write-ConnectionInfo -Model $model -AdminPassword $GoldenAdminPassword
