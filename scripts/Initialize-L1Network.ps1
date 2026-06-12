@@ -157,6 +157,14 @@ try {
         New-ItemProperty -Path $key -Name LocalAccountTokenFilterPolicy -Value 1 -PropertyType DWord -Force | Out-Null
         $out += "WinRM 有効化 + FW 5985 (Any) + LocalAccountTokenFilterPolicy=1"
 
+        # RDP 有効化 (検証環境向け / 冪等)。NLA 維持。
+        if ((Get-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name fDenyTSConnections -EA SilentlyContinue).fDenyTSConnections -ne 0) {
+            Set-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name fDenyTSConnections -Value 0
+            Enable-NetFirewallRule -DisplayGroup 'Remote Desktop' -EA SilentlyContinue
+            Set-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name UserAuthentication -Value 1 -EA SilentlyContinue
+            $out += "RDP 有効化 (3389 / NLA)"
+        }
+
         $out += ("IP 確認: " + ((Get-NetIPAddress -InterfaceIndex $idx -AddressFamily IPv4 | ForEach-Object { $_.IPAddress }) -join ','))
         $out
     } -ArgumentList $ip,$pfx,$HostIp,$Dns,$mac
