@@ -56,7 +56,9 @@
 
 ## 主要スクリプト
 - `bootstrap.ps1` — 単一エントリ (解決→images(Datacenter golden)→L1→制御VM→L1到達→setup_l1→
-  labstore→golden配送→create_l2→Initialize-L2Access→AD→cluster の順)。
+  labstore→golden配送→create_l2→Initialize-L2Access→AD→cluster の順)。完了時にフェーズ別構築時間を表示。
+- `teardown.ps1` — bootstrap の対。L1(+中の L2 をディスクごと)+制御VM を削除。既定でスイッチ/build は残す
+  (`-IncludeSwitch`/`-IncludeBuild`/`-Force`/`-KeepControlNode`)。
 - `scripts/Initialize-L1Network.ps1` — L1 を CtrlNAT 接続 + 静的IP/WinRM (PS Direct, setup_l1 前)。
 - `scripts/Initialize-L2Access.ps1` — Windows L2 の 静的IP/改名/WinRM/CredSSP 最小ブート (PS Direct)。
 - `scripts/Initialize-AdForest.ps1` — DC 昇格 + メンバ参加 + DNS 健全化 (二段 PS Direct)。

@@ -39,10 +39,37 @@ $ErrorActionPreference = "Stop"
 $RepoRoot = $PSScriptRoot
 $Resolved = Join-Path $RepoRoot "$BuildDir\resolved.json"
 
-function Write-Step  { param($m) Write-Host "==> $m" -ForegroundColor Cyan }
+# ---- 構築時間の計測 (フェーズ境界は Write-Step が自動でマークする) ----
+$script:BuildSw       = [System.Diagnostics.Stopwatch]::StartNew()
+$script:Phases        = New-Object System.Collections.Generic.List[object]
+$script:CurPhase      = $null
+$script:CurPhaseStart = 0.0
+function Format-Duration { param([double]$Sec)
+    if ($Sec -lt 60) { return ('{0:0.0}s' -f $Sec) }
+    $ts = [TimeSpan]::FromSeconds([math]::Round($Sec))
+    if ($ts.TotalHours -ge 1) { return ('{0}h{1:00}m{2:00}s' -f [int]$ts.TotalHours, $ts.Minutes, $ts.Seconds) }
+    return ('{0}m{1:00}s' -f [int]$ts.TotalMinutes, $ts.Seconds)
+}
+function Close-Phase {
+    if ($script:CurPhase) {
+        $script:Phases.Add([pscustomobject]@{ Name = $script:CurPhase; Seconds = ($script:BuildSw.Elapsed.TotalSeconds - $script:CurPhaseStart) })
+        $script:CurPhase = $null
+    }
+}
+function Write-BuildTime {
+    Close-Phase
+    Write-Host ""
+    Write-Host "=============== 構築時間 (フェーズ別) ===============" -ForegroundColor Magenta
+    foreach ($p in $script:Phases) { Write-Host ("  {0,-44} {1,10}" -f $p.Name, (Format-Duration $p.Seconds)) }
+    Write-Host ("  {0,-44} {1,10}" -f ('-' * 44), ('-' * 10)) -ForegroundColor DarkGray
+    Write-Host ("  {0,-44} {1,10}" -f '合計', (Format-Duration $script:BuildSw.Elapsed.TotalSeconds)) -ForegroundColor Green
+    Write-Host "====================================================" -ForegroundColor Magenta
+}
+
+function Write-Step  { param($m) Close-Phase; $script:CurPhase = $m; $script:CurPhaseStart = $script:BuildSw.Elapsed.TotalSeconds; Write-Host "==> $m" -ForegroundColor Cyan }
 function Write-Ok    { param($m) Write-Host "  OK  $m" -ForegroundColor Green }
 function Write-Warn2 { param($m) Write-Host "  !!  $m" -ForegroundColor Yellow }
-function Fail        { param($m) Write-Host "  NG  $m" -ForegroundColor Red; exit 1 }
+function Fail        { param($m) Write-Host "  NG  $m" -ForegroundColor Red; Write-Host ("  経過時間: {0}" -f (Format-Duration $script:BuildSw.Elapsed.TotalSeconds)) -ForegroundColor DarkGray; exit 1 }
 
 function Write-ConnectionInfo {
     param(
@@ -377,3 +404,4 @@ Write-Host ""
 Write-Ok "完了: 宣言した環境が一括で構築されました (L1 -> L2 -> AD -> Cluster)。"
 Write-Host "  再実行すれば全工程が冪等に収束します (no-change が受け入れ条件)。" -ForegroundColor DarkGray
 Write-ConnectionInfo -Model $model -AdminPassword $GoldenAdminPassword
+Write-BuildTime

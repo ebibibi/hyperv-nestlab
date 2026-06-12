@@ -83,6 +83,18 @@ L0  物理 Hyper-V ホスト  ── あなたが用意する唯一の前提
 5. L1 内 Hyper-V+LabNAT (Ansible) → L2 作成 (Ansible) → AD 構築 (PowerShell Direct)
 
 再実行すれば全工程が冪等に収束します (no-change が受け入れ条件)。
+完了時に**フェーズ別の構築時間**と合計を表示します。
+
+### 環境の削除 (やり直し)
+```powershell
+# L1 + 中の L2 すべて + 制御 VM を削除 (確認あり)。L2 は L1 のディスクごと消える
+.\teardown.ps1
+
+# 確認なしで削除 / CtrlNAT スイッチや build 成果物まで消す完全クリーン
+.\teardown.ps1 -Force
+.\teardown.ps1 -IncludeSwitch -IncludeBuild -Force
+```
+削除後に `bootstrap.ps1` を実行すれば、まっさらから再構築できます。
 
 完了すると、建った環境への接続先・資格情報・接続例が一覧表示されます
 (`Write-ConnectionInfo`)。各 VM への入り方の詳細・図解は
