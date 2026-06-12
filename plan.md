@@ -46,13 +46,17 @@
   3. 制御 VM へ inventory と宣言設定を流し込み、以降をハンドオフ
         │
         ▼
-[制御 VM: Ansible]  ここから先の構築ロジックはすべて Ansible に一本化
+[制御 VM: Ansible]  ※当初構想。実装では下記「レイヤ分担の確定」のハイブリッドに収束した
   ├─ L0→L1 : Nested ホスト作成 + ExposeVirtualizationExtensions 等の Nested 必須設定
   ├─ L1 内部: Internal スイッチ + New-NetNat（NAT 自己完結ネットワーク）
   ├─ L2     : Windows / Linux VM 群（Autounattend / cloud-init で初期化）
   ├─ AD     : 既存 create_ad.yml を role 化して移植
   └─ azure_local: 別 OSS をラップ（隔離・別ライフサイクル）
 ```
+
+> 注: この「すべて Ansible に一本化」は初期構想。実装では、IP+WinRM が無い段の
+> ブートストラップ (L1/L2 の 静的IP/WinRM/改名/RDP) と AD 昇格は **PowerShell Direct** に
+> 落ち着いた (下記「レイヤ分担の確定」)。最新の正確な対応は README「役割分担」/ CLAUDE.md を参照。
 
 ### なぜ「制御 VM 方式」なのか（原則①の遵守）
 
@@ -65,9 +69,10 @@ Ansible の制御ノードは Windows 上でネイティブに動作しない（
 実装を進める中で、責務を次のように明確化した：
 
 - **L0 レベルの Hyper-V 操作（L0 用スイッチ / L1 ホスト VM / 制御 VM）は、ホスト上の PowerShell（`scripts\HyperVLab.psm1.ps1` + `bootstrap.ps1`）が担当。** ホスト上で直接 cmdlet を叩くのが最も素直で、WinRM 二重化も不要。
-- **L1 の内側（L1 の Hyper-V 役割 / `LabNAT` / L2 VM / AD / クラスタ）は Ansible が担当。**
+- **“ネットワーク前”のブートストラップ（L1/L2 の 静的IP・WinRM有効化・改名・RDP・日本語キーボード、および AD 昇格・参加）は、ホスト上の PowerShell Direct（VMBus）が担当。** IP も WinRM も無い段でも届くため。AD は DC への二段ホップを伴うのでなおさら。
+- **IP+WinRM が整った後の L1 内側（Hyper-V 役割 / `LabNAT` / L2 作成 / クラスタ+S2D）は Ansible が担当**（`setup_l1` / `create_l2` / `create_cluster`）。
 
-これは「Ansible 一本化」の精神（構築ロジックの大半を Ansible に集約）を保ちつつ、ホスト土台づくりを PowerShell に任せる現実的な切り分け。`scripts\HyperVLab.psm1.ps1` の冪等関数は実機 Hyper-V で **作成 → 再実行 no-change（冪等）→ nested/静的メモリ/MAC spoof 収束** を検証済み（`tests\Smoke-HostProvision.ps1`）。
+これは「構築ロジックの“定常構成”部分を Ansible に集約」しつつ、Ansible が前提とする IP+WinRM が無い段（と L0 操作）を PowerShell / PowerShell Direct に任せる現実的な切り分け。`scripts\HyperVLab.psm1.ps1` の冪等関数は実機 Hyper-V で **作成 → 再実行 no-change（冪等）→ nested/静的メモリ/MAC spoof 収束** を検証済み（`tests\Smoke-HostProvision.ps1`）。
 
 ---
 

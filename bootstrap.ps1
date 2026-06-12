@@ -7,14 +7,18 @@
   「利用者が用意するのは Hyper-V サーバーだけ」(原則①) を守るため、
   このスクリプトが必要な制御環境を自前でブートストラップする。
 
-  処理の流れ:
-    1. プリフライト   : Hyper-V / Python / 設定ファイルの存在確認
-    2. 検証           : JSON Schema + 意味検証 (tools/resolve.py) で fail-fast
-    3. 解決           : L1+L2 を確定モデル build/resolved.json へ展開
-    4. 制御ノード構築 : 固定イメージから制御 VM を冪等に作成 (Ansible 内蔵)
-    5. ハンドオフ     : 確定モデル / secrets を渡し、以降の構築を Ansible に委譲
+  処理の流れ (PowerShell / PowerShell Direct と Ansible のハイブリッド。
+  境界は「対象に IP+WinRM が在るか」— 整うまでと L0 は PowerShell、整った後の内側は Ansible):
+    1. プリフライト/検証/解決 : Hyper-V/Python 確認 + tools/resolve.py で確定モデル化  …PowerShell+Python
+    2. イメージ整備           : Windows golden を DISM 生成 / Ubuntu 取得              …PowerShell
+    3. L0→L1 / 制御VM 構築    : L1・制御VMを作成、L0 WinRM 収束                        …PowerShell(+PS Direct)
+    4. L1 到達化              : 静的IP/WinRM/RDP/改名/キーボードを焼く                 …PowerShell Direct
+    5. L1 内部構成            : Hyper-V役割+LabNAT(setup_l1) → ラボストア/golden配送    …Ansible / PowerShell
+    6. L2 作成 + アクセス初期化: create_l2(Ansible) → 静的IP/WinRM/CredSSP(PS Direct)   …Ansible / PS Direct
+    7. AD / クラスタ          : AD 昇格(PS Direct, 二段ホップ) / S2D(create_cluster)    …PS Direct / Ansible
+  完了時にフェーズ別の構築時間と接続情報を表示する。環境の削除は teardown.ps1。
 
-  -DryRun を付けると 1〜3 のみ実行し、作成される環境のプランを表示する
+  -DryRun を付けると 1 (検証/解決) のみ実行し、作成される環境のプランを表示する
   (VM は 1 台も作らない。安全な検証用)。
 
 .EXAMPLE

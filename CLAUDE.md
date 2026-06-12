@@ -28,9 +28,14 @@
 
 ## 構成の要点
 - 3 層: L0 (物理 Hyper-V) / L1 (Nested ホスト VM) / L2 (L1 内の VM)。
-- 構築ロジックは Ansible 一本化。制御 VM (Ubuntu, 10.20.0.10) 上で実行。
-- L0 操作 (NAT/L1/制御VM/golden 配送/ラボストア) はホスト側 PowerShell + PowerShell Direct。
-- L1 内部 (Hyper-V 役割/L2/AD/クラスタ) は Ansible (制御VM → WinRM → L1)。
+- **構築は PowerShell / PowerShell Direct と Ansible のハイブリッド**（「Ansible 一本」ではない）。
+  分担の境界は **「IP + WinRM がもう在るか」**: 整った後の“内側の定常構成”だけ Ansible、それ以前と
+  L0 操作は PowerShell。制御 VM (Ubuntu, 10.20.0.10) が Ansible の実行主体。
+  - **L0 操作** (NAT / L1作成 / 制御VM / golden配送 / ラボストア) … ホスト **PowerShell** (Hyper-V cmdlet)。
+  - **“ネットワーク前”のブートストラップ** (L1/L2 の 静的IP・WinRM有効化・改名・日本語キーボード・RDP、
+    および AD 昇格/参加) … **PowerShell Direct** (VMBus。IP も WinRM も無い段でも届く。AD は二段ホップ)。
+  - **IP+WinRM が整った後の L1/L2 内部** … **Ansible** (制御VM→WinRM)。`setup_l1` (Hyper-V役割+LabNAT) /
+    `create_l2` (L2作成) / `create_cluster` (Failover Cluster+S2D, CredSSP)。
 - ネットワーク: L1 は CtrlNAT(10.20.0.0/24, L1=10.20.0.20)。L2 は LabNAT(10.10.0.0/24)。
 
 ## ハマりどころ → `KB/` を見ること
