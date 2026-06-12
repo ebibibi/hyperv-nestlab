@@ -34,3 +34,4 @@ Windows golden / S2D まわりの**汎用ノウハウ集**でもあります。
 | [0012](0012-l1-uplink-pick-by-mac.md) | L1 制御IPが内部スイッチ側に載って No route to host | アップリンクは MAC で一意特定 |
 | [0013](0013-labstore-reattach-offline.md) | 再アタッチしたラボストアがオフラインで RAW 扱いされ失敗 | 存在判定前にオンライン化 |
 | [0014](0014-rdp-firewall-locale-group.md) | RDP を開けたのに繋がらない (FW 表示グループがロケール翻訳) | 規則は `-Name` で開ける |
+| [0015](0015-japanese-keyboard-layer-driver.md) | ja-JP なのに英語キーボード配列 / L1 ホスト名が未変更 | i8042prt レイヤドライバ + L1 改名 |

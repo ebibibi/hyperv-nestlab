@@ -87,6 +87,8 @@ if (-not $mac -or $mac -match '^0+$') {
 # --- L1: PowerShell Direct で静的 IP + WinRM を構成 ---
 $ip  = $IPCidr.Split('/')[0]
 $pfx = [int]($IPCidr.Split('/')[1])
+# 目的ホスト名 = resolved の L1 名 (NetBIOS 制約に丸める: 英数とハイフン / 最大 15 文字)
+$cn = ($VMName -replace '[^A-Za-z0-9-]','-'); if ($cn.Length -gt 15) { $cn = $cn.Substring(0,15) }
 $cred = New-Object System.Management.Automation.PSCredential($L1User, (ConvertTo-SecureString $L1Password -AsPlainText -Force))
 Log "L1 への PowerShell Direct セッションを待機 (最大 ${ReadyTimeoutSec}s)"
 $deadline = (Get-Date).AddSeconds($ReadyTimeoutSec); $session = $null
@@ -98,9 +100,10 @@ if (-not $session) { throw "L1 へ PowerShell Direct セッションを張れま
 
 try {
     $result = Invoke-Command -Session $session -ScriptBlock {
-        param($Ip,$Pfx,$Gw,$Dns,$Mac)
+        param($Ip,$Pfx,$Gw,$Dns,$Mac,$DesiredName)
         $ErrorActionPreference = 'Stop'
         $out = @()
+        $reboot = $false
 
         # CtrlNAT アップリンクを MAC で一意特定する (KB/0012)。
         # 「最初の Up な NIC」だと、setup_l1 が作る内部スイッチ vEthernet(LabNAT) が出来た後の
@@ -167,10 +170,44 @@ try {
         $out += "RDP 有効化 (3389/NLA, FW=Name)"
 
         $out += ("IP 確認: " + ((Get-NetIPAddress -InterfaceIndex $idx -AddressFamily IPv4 | ForEach-Object { $_.IPAddress }) -join ','))
-        $out
-    } -ArgumentList $ip,$pfx,$HostIp,$Dns,$mac
 
-    $result | ForEach-Object { Log $_ }
+        # 日本語 106/109 キーボードへ (golden は US 101 レイヤのまま = ja-JP でも記号位置が英語配列)。
+        # i8042prt のレイヤドライバを差し替える。反映には再起動が要る (KB/0015)。冪等。
+        $kp = 'HKLM:\SYSTEM\CurrentControlSet\Services\i8042prt\Parameters'
+        if ((Get-ItemProperty $kp -Name 'LayerDriver JPN' -EA SilentlyContinue).'LayerDriver JPN' -ne 'kbd106.dll') {
+            Set-ItemProperty $kp -Name 'LayerDriver JPN'            -Value 'kbd106.dll'  -Type String
+            Set-ItemProperty $kp -Name 'OverrideKeyboardIdentifier' -Value 'PCAT_106KEY' -Type String
+            Set-ItemProperty $kp -Name 'OverrideKeyboardSubtype'    -Value 2            -Type DWord
+            Set-ItemProperty $kp -Name 'OverrideKeyboardType'       -Value 7            -Type DWord
+            $out += "日本語キーボード(106/109)化"; $reboot = $true
+        }
+
+        # ホスト名を resolved の L1 名へ (golden 既定 WIN-xxxxx のままにしない)。要再起動。冪等。
+        if ($DesiredName -and $env:COMPUTERNAME -ne $DesiredName) {
+            Rename-Computer -NewName $DesiredName -Force
+            $out += "rename $env:COMPUTERNAME -> $DesiredName"; $reboot = $true
+        }
+
+        [pscustomobject]@{ out = $out; reboot = $reboot }
+    } -ArgumentList $ip,$pfx,$HostIp,$Dns,$mac,$cn
+
+    $result.out | ForEach-Object { Log $_ }
+
+    if ($result.reboot) {
+        Log "L1: ホスト名/キーボード反映のため再起動"
+        Remove-PSSession $session; $session = $null
+        Restart-VM -Name $VMName -Force | Out-Null
+        Start-Sleep -Seconds 20
+        # 再起動後に PowerShell Direct を張り直して収束を確認
+        $rd = (Get-Date).AddSeconds($ReadyTimeoutSec)
+        while (-not $session -and (Get-Date) -lt $rd) {
+            try { $session = New-PSSession -VMName $VMName -Credential $cred -ErrorAction Stop }
+            catch { Start-Sleep -Seconds 8 }
+        }
+        if (-not $session) { throw "L1 再起動後に PowerShell Direct を張れませんでした。" }
+        $after = Invoke-Command -Session $session -ScriptBlock { $env:COMPUTERNAME }
+        Log "L1: 再起動後ログオン確認 OK (ComputerName=$after)"
+    }
 }
 finally {
     if ($session) { Remove-PSSession $session }

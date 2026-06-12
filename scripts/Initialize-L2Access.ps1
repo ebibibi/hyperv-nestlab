@@ -117,6 +117,16 @@ try {
                     Set-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name UserAuthentication -Value 1 -EA SilentlyContinue
                     Enable-NetFirewallRule -Name 'RemoteDesktop-UserMode-In-TCP','RemoteDesktop-UserMode-In-UDP' -EA SilentlyContinue
                     $out += "RDP"
+                    # 日本語 106/109 キーボードへ (golden は US 101 レイヤ = ja-JP でも記号位置が英語配列)。
+                    # i8042prt のレイヤドライバ差し替え。反映には再起動が要る (KB/0015)。冪等。
+                    $kp = 'HKLM:\SYSTEM\CurrentControlSet\Services\i8042prt\Parameters'
+                    if ((Get-ItemProperty $kp -Name 'LayerDriver JPN' -EA SilentlyContinue).'LayerDriver JPN' -ne 'kbd106.dll') {
+                        Set-ItemProperty $kp -Name 'LayerDriver JPN'            -Value 'kbd106.dll'  -Type String
+                        Set-ItemProperty $kp -Name 'OverrideKeyboardIdentifier' -Value 'PCAT_106KEY' -Type String
+                        Set-ItemProperty $kp -Name 'OverrideKeyboardSubtype'    -Value 2            -Type DWord
+                        Set-ItemProperty $kp -Name 'OverrideKeyboardType'       -Value 7            -Type DWord
+                        $out += "JPキーボード"; $reboot=$true
+                    }
                     # 改名 (AD/クラスタ用)。要再起動。
                     if ($env:COMPUTERNAME -ne $name) { Rename-Computer -NewName $name -Force; $out += "rename->$name"; $reboot=$true }
                     [pscustomobject]@{ out=$out; reboot=$reboot }
