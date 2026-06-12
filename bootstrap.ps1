@@ -92,6 +92,7 @@ function Write-ConnectionInfo {
     Write-Host "  ユーザー   : Administrator"
     Write-Host ("  パスワード : {0}" -f $AdminPassword)
     Write-Host "  接続例     : Enter-PSSession -ComputerName 10.20.0.20 -Authentication Negotiate -Credential (Get-Credential 'Administrator')"
+    Write-Host "  RDP (画面) : L0 から直接 → mstsc /v:10.20.0.20 (Administrator / 上記パスワード)"
 
     Write-Host ""
     Write-Host "[Hyper-V マネージャーで L2 VM を操作]" -ForegroundColor Cyan
@@ -109,6 +110,8 @@ function Write-ConnectionInfo {
         Write-Host "     L2 VM    : なし"
     }
     Write-Host "  ※ L2 の電源・設定・コンソール操作は L1 内の Hyper-V マネージャーで行います。"
+    Write-Host "  ※ GUI を快適に使うなら RDP チェーン: L0→L1 (mstsc /v:10.20.0.20)→ L1 内から L2 へ mstsc /v:<L2 IP>"
+    Write-Host "     (RDP は L1/L2 とも既定で有効化済み。L2 は LabNAT 隔離のため必ず L1 の中から接続)"
 
     foreach ($vm in @($Model.vms)) {
         $ip = if ($vm.nics -and $vm.nics[0].ip) { $vm.nics[0].ip } else { "(IP 未設定)" }
@@ -134,6 +137,7 @@ function Write-ConnectionInfo {
             Write-Host ("  ユーザー   : {0}" -f $user)
             Write-Host ("  パスワード : {0}" -f $AdminPassword)
             Write-Host ("  接続例     : Enter-PSSession -ComputerName {0} -Authentication Negotiate -Credential (Get-Credential '{1}')" -f $ip, $user)
+            Write-Host ("  RDP (画面) : L1 の中から → mstsc /v:{0} ({1} / 上記パスワード)  ※LabNAT 隔離のため L1 経由" -f $ip, $user)
         }
     }
 
