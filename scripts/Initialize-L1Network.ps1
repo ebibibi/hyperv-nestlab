@@ -158,12 +158,13 @@ try {
         $out += "WinRM 有効化 + FW 5985 (Any) + LocalAccountTokenFilterPolicy=1"
 
         # RDP 有効化 (検証環境向け / 冪等)。NLA 維持。
-        if ((Get-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name fDenyTSConnections -EA SilentlyContinue).fDenyTSConnections -ne 0) {
-            Set-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name fDenyTSConnections -Value 0
-            Enable-NetFirewallRule -DisplayGroup 'Remote Desktop' -EA SilentlyContinue
-            Set-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name UserAuthentication -Value 1 -EA SilentlyContinue
-            $out += "RDP 有効化 (3389 / NLA)"
-        }
+        # FW 規則は必ず Name 指定で開ける — 日本語ロケール L1 では DisplayGroup 'Remote Desktop'
+        # が「リモート デスクトップ」になりマッチせず穴が開かない (KB/0014)。fDeny が既に 0 でも
+        # FW 開放まで毎回収束させたいので、状態チェックで丸ごとスキップしない。
+        Set-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name fDenyTSConnections -Value 0
+        Set-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name UserAuthentication -Value 1 -EA SilentlyContinue
+        Enable-NetFirewallRule -Name 'RemoteDesktop-UserMode-In-TCP','RemoteDesktop-UserMode-In-UDP' -EA SilentlyContinue
+        $out += "RDP 有効化 (3389/NLA, FW=Name)"
 
         $out += ("IP 確認: " + ((Get-NetIPAddress -InterfaceIndex $idx -AddressFamily IPv4 | ForEach-Object { $_.IPAddress }) -join ','))
         $out

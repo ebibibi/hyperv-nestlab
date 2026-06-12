@@ -110,13 +110,13 @@ try {
                     New-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' -Name LocalAccountTokenFilterPolicy -Value 1 -PropertyType DWord -Force | Out-Null
                     # CredSSP サーバ (Ansible の二段ホップ委譲用)
                     try { Enable-WSManCredSSP -Role Server -Force | Out-Null; $out += "CredSSP server" } catch {}
-                    # RDP 有効化 (検証環境向け / 冪等)。NLA 維持。
-                    if ((Get-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name fDenyTSConnections -EA SilentlyContinue).fDenyTSConnections -ne 0) {
-                        Set-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name fDenyTSConnections -Value 0
-                        Enable-NetFirewallRule -DisplayGroup 'Remote Desktop' -EA SilentlyContinue
-                        Set-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name UserAuthentication -Value 1 -EA SilentlyContinue
-                        $out += "RDP"
-                    }
+                    # RDP 有効化 (検証環境向け / 冪等)。NLA 維持。FW 規則は Name 指定で開ける
+                    # — 日本語ロケールでは DisplayGroup 'Remote Desktop' がマッチせず穴が開かない
+                    #   (KB/0014)。fDeny が既に 0 でも FW 開放まで毎回収束させる。
+                    Set-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name fDenyTSConnections -Value 0
+                    Set-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name UserAuthentication -Value 1 -EA SilentlyContinue
+                    Enable-NetFirewallRule -Name 'RemoteDesktop-UserMode-In-TCP','RemoteDesktop-UserMode-In-UDP' -EA SilentlyContinue
+                    $out += "RDP"
                     # 改名 (AD/クラスタ用)。要再起動。
                     if ($env:COMPUTERNAME -ne $name) { Rename-Computer -NewName $name -Force; $out += "rename->$name"; $reboot=$true }
                     [pscustomobject]@{ out=$out; reboot=$reboot }
