@@ -104,24 +104,24 @@ function Ensure-LabVm {
         $changed = $true
     }
 
-    if ((Get-VMProcessor -VMName $Name).Count -ne $Cpu) {
-        Set-VMProcessor -VMName $Name -Count $Cpu
+    # vCPU / 静的メモリ / Nested拡張(ExposeVirtualizationExtensions) は Hyper-V の仕様上
+    # VM がオフでないと変更できない。既存VMで宣言値とドリフトがある時だけ一旦停止して適用する
+    # （起動は呼び出し側=Invoke-HostProvision が State!=Running を見て行う）。これにより
+    # 「展開済み L1 の cpu/memory_gb を書き換えて再実行 → その値へ収束」を冪等に実現する。
+    $m0         = Get-VMMemory -VMName $Name
+    $needCpu    = (Get-VMProcessor -VMName $Name).Count -ne $Cpu
+    $needMem    = $StaticMemory -and ($m0.DynamicMemoryEnabled -or $m0.Startup -ne $mem)
+    $needNested = $Nested -and (-not (Get-VMProcessor -VMName $Name).ExposeVirtualizationExtensions)
+    if ($needCpu -or $needMem -or $needNested) {
+        if ((Get-VM -Name $Name).State -eq 'Running') { Stop-VM -Name $Name -Force }  # -Force=確認なしのゲストシャットダウン
+        if ($needCpu)    { Set-VMProcessor -VMName $Name -Count $Cpu }
+        if ($needMem)    { Set-VMMemory -VMName $Name -DynamicMemoryEnabled $false -StartupBytes $mem }
+        if ($needNested) { Set-VMProcessor -VMName $Name -ExposeVirtualizationExtensions $true }
         $changed = $true
     }
 
-    if ($StaticMemory) {
-        $m = Get-VMMemory -VMName $Name
-        if ($m.DynamicMemoryEnabled -or $m.Startup -ne $mem) {
-            Set-VMMemory -VMName $Name -DynamicMemoryEnabled $false -StartupBytes $mem
-            $changed = $true
-        }
-    }
-
     if ($Nested) {
-        if (-not (Get-VMProcessor -VMName $Name).ExposeVirtualizationExtensions) {
-            Set-VMProcessor -VMName $Name -ExposeVirtualizationExtensions $true
-            $changed = $true
-        }
+        # MAC spoofing は稼働中でも設定可。ドリフトのみ調整。
         foreach ($na in (Get-VMNetworkAdapter -VMName $Name)) {
             if ($na.MacAddressSpoofing -ne 'On') {
                 $na | Set-VMNetworkAdapter -MacAddressSpoofing On

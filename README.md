@@ -99,6 +99,15 @@ L0  物理 Hyper-V ホスト  ── あなたが用意する唯一の前提
 再実行すれば全工程が冪等に収束します (no-change が受け入れ条件)。
 完了時に**フェーズ別の構築時間**と合計を表示します。
 
+### リソース変更 (展開済み VM の vCPU / メモリ)
+宣言ファイルの `cpu` / `memory_gb`（L1 は `l1.cpu` / `l1.memory_gb`）を書き換えて `bootstrap.ps1` を再実行すれば、
+**既存 VM もその値へ冪等に収束**します。静的メモリ・CPU 数の変更は Hyper-V 仕様で VM オフ必須のため、
+**ドリフトのある VM だけ一旦停止→適用→再起動**されます（他は no-change）。詳細は [`KB/0018`](KB/0018-resize-existing-vm-resources.md)。
+```powershell
+# 例: l2/ad-forest.yml の memory_gb を 4 -> 8 に編集してから
+.\bootstrap.ps1 -L1 l1\standard-host.yml -L2 l2\ad-forest.yml
+```
+
 ### 環境の削除 (やり直し)
 ```powershell
 # L1 + 中の L2 すべて + 制御 VM を削除 (確認あり)。L2 は L1 のディスクごと消える

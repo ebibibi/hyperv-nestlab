@@ -95,6 +95,35 @@
           Idx: "{{ idx }}"
           SizeGB: "{{ item.size_gb | int }}"
 
+    - name: L2 のリソース(vCPU/メモリ)を宣言値へ調整（既存VMのドリフト解消）
+      # 一度作成済みの L2 でも、宣言ファイルの cpu / memory_gb を書き換えて再実行すれば
+      # この値へ収束する（冪等）。静的メモリ・CPU数の変更は Hyper-V の仕様上 VM がオフでないと
+      # 適用できないため、ドリフトがある時だけ一旦停止して適用する（起動は後続「L2 を起動」が行う）。
+      ansible.windows.win_powershell:
+        error_action: stop
+        script: |
+          # 型を明示しないと Ansible 経由では文字列で渡り "4"*1GB が文字列反復になり
+          # OutOfMemoryException を起こす。必ず [int] 等で受ける（KB/0008）。
+          param([string]$Name,[int]$MemGB,[int]$Cpu)
+          $ErrorActionPreference = 'Stop'
+          $Ansible.Changed = $false
+          if (-not (Get-VM -Name $Name -ErrorAction SilentlyContinue)) { return }  # 作成タスクが作る。無ければ何もしない
+          $want    = [int64]$MemGB * 1GB
+          $needCpu = (Get-VMProcessor -VMName $Name).Count -ne $Cpu
+          $m       = Get-VMMemory -VMName $Name
+          $needMem = $m.DynamicMemoryEnabled -or ($m.Startup -ne $want)
+          if ($needCpu -or $needMem) {
+            $wasRunning = (Get-VM -Name $Name).State -eq 'Running'
+            if ($wasRunning) { Stop-VM -Name $Name -Force }   # 静的メモリ/CPU数変更は VM オフ必須（-Force=確認なしのゲストシャットダウン）
+            if ($needCpu) { Set-VMProcessor -VMName $Name -Count $Cpu }
+            if ($needMem) { Set-VMMemory -VMName $Name -DynamicMemoryEnabled $false -StartupBytes $want }
+            $Ansible.Changed = $true
+          }
+        parameters:
+          Name: "{{ name }}"
+          MemGB: "{{ memory_gb | int }}"
+          Cpu: "{{ cpu | int }}"
+
     - name: L2 を起動
       ansible.windows.win_powershell:
         error_action: stop
