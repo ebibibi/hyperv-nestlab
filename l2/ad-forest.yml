@@ -6,7 +6,7 @@
 #     本番では "{{ vault.dsrm_password }}" を使い、シークレットは vault で暗号化すること。
 defaults:
   cpu: 2
-  memory_gb: 4
+  memory_gb: 8          # Server 2025(Desktop Experience)のDC/メンバは4GBだと窮屈なので8GBを既定に
   os: windows_server_2025
   domain_join: corp.contoso.local
 
