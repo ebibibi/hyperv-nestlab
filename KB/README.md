@@ -35,3 +35,5 @@ Windows golden / S2D まわりの**汎用ノウハウ集**でもあります。
 | [0013](0013-labstore-reattach-offline.md) | 再アタッチしたラボストアがオフラインで RAW 扱いされ失敗 | 存在判定前にオンライン化 |
 | [0014](0014-rdp-firewall-locale-group.md) | RDP を開けたのに繋がらない (FW 表示グループがロケール翻訳) | 規則は `-Name` で開ける |
 | [0015](0015-japanese-keyboard-layer-driver.md) | ja-JP なのに英語キーボード配列 / L1 ホスト名が未変更 | i8042prt レイヤドライバ + L1 改名 |
+| [0016](0016-ps-direct-credential.md) | PowerShell Direct は -Credential 必須（非対話で無言ハング） | 資格情報待ちプロンプトでブロック |
+| [0017](0017-run-ps1-with-pwsh7.md) | .ps1 は pwsh7 で実行（5.1 は文字化けでパースエラー） | UTF-8 BOMなし × cp932 |
