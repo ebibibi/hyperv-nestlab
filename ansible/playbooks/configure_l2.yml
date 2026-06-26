@@ -1,9 +1,17 @@
 ---
 # L2 Windows ゲストの OS内構成 (Windows 機能 / アプリ等) を Ansible で冪等適用する。
 # 実行タイミング: create_l2 + Initialize-L2Access(IP/WinRM付与) + AD(参加) の後。
-# 接続: 制御VM -> WinRM(L1ルータ経由) -> 各 l2_windows (group_vars/l2_windows.yml)。
+# 接続: 制御VM -> WinRM(L1ルータ経由) -> 各 l2_windows。
+#
+# 重要: ドメインがある構成では DC にはローカル Administrator が存在せず、メンバーも
+# ドメイン参加済みのため、既定のローカル資格情報では接続できない/固まる。
+# そこでドメインがあるときは <NETBIOS>\Administrator(ドメイン管理者) で接続する
+# (group_vars/l2_windows.yml の既定を play レベルで上書き。クラスタ play と同方針)。
 - name: "L2: OS内構成 (Windows features 等)"
   hosts: l2_windows
   gather_facts: false
+  vars:
+    ansible_user: '{{ (domain.netbios ~ "\\Administrator") if domain else (lookup("env","L2_GUEST_USER") | default("Administrator", true)) }}'
+    ansible_password: '{{ lookup("env","L2_GUEST_PASSWORD") | default("P@ssw0rd-Lab-Change!", true) }}'
   roles:
     - role: l2_config
