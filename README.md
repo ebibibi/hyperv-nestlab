@@ -65,6 +65,12 @@ L0  物理 Hyper-V ホスト  ── あなたが用意する唯一の前提
 ## クイックスタート
 
 ### 前提
+- **実行は PowerShell 7 (`pwsh`) を推奨。** 本リポジトリの `.ps1` は UTF-8 (BOM なし) + 日本語コメント/文字列を
+  含む。Windows PowerShell 5.1 は BOM なしスクリプトを ANSI コードページ (日本語環境=cp932) として読むため、
+  日本語が化けて**構文エラーで落ちる**ことがある (例: `teardown.ps1`)。pwsh 7 は `.ps1` を既定で UTF-8 として
+  読むので、そのまま正しく動く。ホストに pwsh が無ければ `winget install Microsoft.PowerShell` 等で導入する。
+  （※ 全 `.ps1` を **UTF-8 with BOM** で保存し直せば 5.1 でも動くが、本プロジェクトは **pwsh 7 前提で統一**する。
+  詳細は [`KB/0017`](KB/0017-run-ps1-with-pwsh7.md)。）
 - Windows Server / Windows 11 等で **Hyper-V 役割が有効**であること (これだけ)。
 - Python (pyyaml + jsonschema) … 設定の検証/解決に使用。
 - イメージ(Windows Server 2025 評価版 ISO / Ubuntu cloud image)は **すべて自動ダウンロード**。
@@ -72,6 +78,9 @@ L0  物理 Hyper-V ホスト  ── あなたが用意する唯一の前提
   別言語/別版にしたい場合のみ `assets/images.yml` の `iso_url` を差し替える。
 
 ### 実行
+> **PowerShell 7 (`pwsh`) で実行すること** (上記「前提」参照)。下記は pwsh セッション内、または
+> `pwsh -File .\bootstrap.ps1 ...` の形で。SSH 越しに叩く場合も `pwsh -NoProfile -File ...` を使う。
+
 ```powershell
 # まず DryRun で構築プランと必要イメージだけ確認 (VM は作らない)
 .\bootstrap.ps1 -L1 l1\standard-host.yml -L2 l2\minimal-windows.yml -DryRun
