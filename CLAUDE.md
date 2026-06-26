@@ -2,6 +2,8 @@
 
 このリポジトリで作業する際の前提・約束ごと。
 
+> 🆘 **トラブル時はまず `KB/README.md` を読むこと。** エラー・想定外の挙動の多くは既知で、`KB/` に解決法が記事化されている。手探りで再調査する前に索引を見る。
+
 ## 作業の進め方 (ユーザーの希望)
 - **すべてフォアグラウンドで待つこと。** バックグラウンド実行＋完了通知は通知が届かない
   ことがあるため使わない。長時間タスクでも前面で同期的に待ち、結果をその場で確認・報告する。
@@ -15,10 +17,11 @@
   プロジェクトの状態・ゴール・約束ごと専用で、技術的ハマりは置かない。
 
 ## リポジトリの場所 (重要)
-- **開発用(正本)は `D:\hyperv-nestlab-dev`**。GitHub: https://github.com/ebibibi/hyperv-nestlab (origin/master)。
-  - 旧名 `D:\nestedhyper-v` から改名済み (ユーザーのテスト用 clone と区別するため)。
-- `D:\nestlab-test` 等はユーザーが GitHub から clone した**テスト用**。開発側からは触らない。
-- `C:\Users\Administrator\nestedhyper-v` は**古い**。触らない。
+- **clone は `D:\hyperv-nestlab` の 1 本に統一** (2026-06-26)。開発も環境構築 (bootstrap 実行) もここで行う。
+  GitHub: https://github.com/ebibibi/hyperv-nestlab (origin/master)。
+  - 旧 `D:\hyperv-nestlab-dev` / `D:\nestlab-test` / `C:\Users\Administrator\nestedhyper-v` は削除済み。
+- **`.ps1` は `pwsh` (7) で実行する。** `powershell` (5.1) は UTF-8(BOMなし)+日本語を cp932 誤読して構文エラーになる (`KB/0017`)。
+- ホストには GitHub 認証が無い (clone=匿名 read のみ)。push が要るときは `git bundle` で認証のある別マシンへ運んで push する。
 - C: は空き容量が少ない。VHDX 等の実体は必ず D: (data root) へ。
 
 ## 3 つの絶対基準 (設計の芯)
@@ -38,10 +41,10 @@
     `create_l2` (L2作成) / `create_cluster` (Failover Cluster+S2D, CredSSP)。
 - ネットワーク: L1 は CtrlNAT(10.20.0.0/24, L1=10.20.0.20)。L2 は LabNAT(10.10.0.0/24)。
 
-## ハマりどころ → `KB/` を見ること
+## トラブル時は `KB/` を読む（ハマりどころ集）
 
-既知のハマりどころと解決法は**すべて `KB/` に記事化**している (`KB/README.md` が索引)。
-新たに踏んだら**メモリではなく KB に追記**する (上の「作業の進め方」のルール参照)。主な記事:
+**エラーや想定外の挙動に当たったら、まず `KB/README.md`（索引）を読む。** 既知のハマりどころと解決法は
+**すべて `KB/` に記事化**している。新たに踏んだら**メモリではなく KB に追記**する (上の「作業の進め方」のルール参照)。主な記事:
 
 - `KB/0001` Windows clone の CRLF が Linux 側を壊す (`.gitattributes` で LF 固定)
 - `KB/0002` 制御VMには ansible-core しか無い (collection / pywinrm[credssp] を版固定導入)
@@ -53,6 +56,10 @@
 - `KB/0008` win_powershell の罠 (引数は文字列 / 既定でエラー握りつぶし / 日本語ロケール)
 - `KB/0009` cloud イメージの rootfs (~3.5GB) は起動前に VHD 拡張する
 - `KB/0010` L1 内 Hyper-V は labstore/L2 より先に入れる (`Set-VMHost`/`New-VM` の前提)
+- `KB/0016` PowerShell Direct は `-Credential` 必須 (省くと非対話で無言ハング。壊れと誤診しがち)
+- `KB/0017` リポジトリの `.ps1` は **pwsh 7** で実行 (`powershell` 5.1 は cp932 誤読でパースエラー)
+
+（0011〜0015 を含む全記事は `KB/README.md` 参照）
 
 補足 (KB 化するほどでもない定常事実):
 - L1/L2 admin (golden 既定): `Administrator` / `P@ssw0rd-Lab-Change!`。
