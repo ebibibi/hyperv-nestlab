@@ -1,0 +1,22 @@
+---
+# L2 Windows ゲストの「OS内構成」を Ansible(制御VM -> WinRM, L1ルータ経由)で冪等に行う。
+# 入力は確定モデルの各 L2 VM hostvars (resolved_inventory.py がそのまま渡す)。
+# まずは宣言された Windows 機能 (features) を導入する。クラスタ(create_cluster.yml)と同じく
+# 制御VMから WinRM で L2 に直接届く（AD だけは PowerShell Direct のまま=ad ロール未移植）。
+#
+# 例: l2/*.yml の defaults / group / vm に
+#   features: [Web-Server, Web-Mgmt-Console, Web-Windows-Auth]
+# と書けば、その L2 に IIS 一式が入る。
+
+- name: "L2 機能の導入: {{ (features | default([])) | join(', ') }}"
+  when: (features | default([])) | length > 0
+  ansible.windows.win_feature:
+    name: "{{ features }}"
+    include_management_tools: true
+    state: present
+  register: l2_feat
+
+- name: "機能導入で再起動が要求されたら再起動"
+  when: (l2_feat is defined) and (l2_feat.reboot_required | default(false))
+  ansible.windows.win_reboot:
+    reboot_timeout: 1200

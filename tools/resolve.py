@@ -42,7 +42,7 @@ SCHEMA_DIR = REPO / "schema"
 # 既定値
 DEFAULT_OS_DISK_GB = 80
 # language も継承対象 (L1.l2_defaults < L2.defaults < group < overrides)
-INHERITABLE = ("cpu", "memory_gb", "os", "generation", "domain_join", "disk_gb", "language")
+INHERITABLE = ("cpu", "memory_gb", "os", "generation", "domain_join", "disk_gb", "language", "features")
 
 LINUX_RE = re.compile(r"ubuntu|debian|linux|rocky|alma", re.I)
 
@@ -239,6 +239,7 @@ def resolve(l1, l2):
     for vm in vms:
         lang = vm.get("language") or default_lang
         vm["language"] = lang
+        vm.setdefault("features", [])   # L2 で導入する Windows 機能 (Ansible win_feature)
         if is_linux_os(vm.get("os")):
             vm["base_image_file"] = ubuntu_basename
             vm["locale"] = linux_locales.get(lang, "en_US.UTF-8")

@@ -396,6 +396,16 @@ if ($model.domain) {
     Write-Ok "AD フォレスト構築完了"
 }
 
+# ---------------------------------------------------------------- 6b. L2 OS内構成 (features / IIS 等)
+# 宣言ファイルで features を持つ Windows L2 があれば Ansible(制御VM->WinRM) で機能導入する。
+# AD 参加後に走るので、ドメインサービスアカウント等を前提にした構成にも続けられる。
+if ($model.vms | Where-Object { ($_.os -notmatch 'ubuntu|debian|linux') -and ($_.features) -and (@($_.features).Count -gt 0) }) {
+    Write-Step "L2: OS内構成 (Windows features 等, Ansible: configure_l2.yml)"
+    & (Join-Path $RepoRoot "control-node\Invoke-Ansible.ps1") -RepoRoot $RepoRoot -Model $Resolved -Playbook "configure_l2.yml" -L1Password $GoldenAdminPassword
+    if ($LASTEXITCODE -ne 0) { Fail "L2 OS内構成 (features) に失敗しました。" }
+    Write-Ok "L2 OS内構成完了"
+}
+
 # ---------------------------------------------------------------- 7. クラスタ + S2D
 if ($model.clusters -and $model.clusters.Count -gt 0) {
     Write-Step "L2 上にフェイルオーバークラスタ + S2D を構築 (Ansible: create_cluster.yml)"

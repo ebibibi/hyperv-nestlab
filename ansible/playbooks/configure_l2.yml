@@ -1,0 +1,9 @@
+---
+# L2 Windows ゲストの OS内構成 (Windows 機能 / アプリ等) を Ansible で冪等適用する。
+# 実行タイミング: create_l2 + Initialize-L2Access(IP/WinRM付与) + AD(参加) の後。
+# 接続: 制御VM -> WinRM(L1ルータ経由) -> 各 l2_windows (group_vars/l2_windows.yml)。
+- name: "L2: OS内構成 (Windows features 等)"
+  hosts: l2_windows
+  gather_facts: false
+  roles:
+    - role: l2_config

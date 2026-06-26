@@ -108,6 +108,21 @@ L0  物理 Hyper-V ホスト  ── あなたが用意する唯一の前提
 .\bootstrap.ps1 -L1 l1\standard-host.yml -L2 l2\ad-forest.yml
 ```
 
+### L2 に Windows 機能を入れる (features / 例: IIS)
+L2 VM の宣言に `features` を書くと、その Windows 機能を **Ansible (制御VM→WinRM, L1ルータ経由)** で冪等に導入します。
+L2 のゲスト内構成は AD を除き **Ansible が本線**（クラスタ構築 `create_cluster.yml` と同じ経路）。
+```yaml
+# l2/*.yml の defaults / group / vm に書ける
+groups:
+  - name: members
+    name_prefix: mem
+    count: 1
+    ip_from: 10.10.0.21
+    features: [Web-Server, Web-Mgmt-Console, Web-Windows-Auth]   # ← IIS 一式
+```
+`bootstrap.ps1` 実行時、AD 参加の後に `configure_l2.yml`（role `l2_config` → `ansible.windows.win_feature`）が走る。
+`features` は冪等（既に入っていれば no-change）。`Web-Server` 以外の任意の Windows 機能名を並べられる。
+
 ### 環境の削除 (やり直し)
 ```powershell
 # L1 + 中の L2 すべて + 制御 VM を削除 (確認あり)。L2 は L1 のディスクごと消える

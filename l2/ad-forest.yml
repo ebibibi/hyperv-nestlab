@@ -22,3 +22,5 @@ groups:
     name_prefix: mem
     count: 1
     ip_from: 10.10.0.21
+    # メンバーサーバーに IIS 一式を宣言で導入（Ansible win_feature）。
+    features: [Web-Server, Web-Mgmt-Console, Web-Windows-Auth, Web-Asp-Net45]
