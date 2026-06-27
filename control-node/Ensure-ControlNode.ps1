@@ -18,7 +18,7 @@ param(
     [string]$Model,
     [string]$Name = "nested-lab-ctrl",
     [int]$Cpu = 2,
-    [int]$MemoryGB = 4,
+    [int]$MemoryGB = 6,   # Ansible/Kerberos ツールチェーン(pywinrm[kerberos]のビルド・playbook実行)で 4GB だと枯渇しやすい (KB/0011)
     [string]$Switch = "CtrlNAT",
     [string]$Subnet = "10.20.0.0/24",
     [string]$HostIp = "10.20.0.1",
