@@ -38,3 +38,4 @@ Windows golden / S2D まわりの**汎用ノウハウ集**でもあります。
 | [0016](0016-ps-direct-credential.md) | PowerShell Direct は -Credential 必須（非対話で無言ハング） | 資格情報待ちプロンプトでブロック |
 | [0017](0017-run-ps1-with-pwsh7.md) | .ps1 は pwsh7 で実行（5.1 は文字化けでパースエラー） | UTF-8 BOMなし × cp932 |
 | [0018](0018-resize-existing-vm-resources.md) | 展開済みVMの vCPU/メモリ変更（宣言値の再適用） | create-only が穴。VMオフ必須でドリフト時のみ停止→適用 |
+| [0019](0019-l2-member-winrm-kerberos.md) | ドメインメンバー L2 への WinRM は Kerberos が要る（NTLM-by-IP は拒否） | 0x8009030e は鯖故障でなく認証経路。FQDN+Kerberos へ |

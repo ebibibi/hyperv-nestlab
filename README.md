@@ -123,6 +123,11 @@ groups:
 `bootstrap.ps1` 実行時、AD 参加の後に `configure_l2.yml`（role `l2_config` → `ansible.windows.win_feature`）が走る。
 `features` は冪等（既に入っていれば no-change）。`Web-Server` 以外の任意の Windows 機能名を並べられる。
 
+ドメイン参加メンバーへの接続は **Kerberos**（FQDN + ドメイン管理者 UPN）で行う。制御 VM は
+非ドメインの Linux なので、メンバーへ IP+NTLM では拒否される（`0x8009030e`）。`configure_l2.yml`
+の前に `Ensure-ControlKerberos.ps1` が制御 VM に `krb5.conf`/`hosts`/`pywinrm[kerberos]` を用意し、
+動的インベントリが該当 L2 を FQDN+Kerberos へ切り替える（クラスタノードは従来どおり / 詳細 `KB/0019`）。
+
 ### 環境の削除 (やり直し)
 ```powershell
 # L1 + 中の L2 すべて + 制御 VM を削除 (確認あり)。L2 は L1 のディスクごと消える

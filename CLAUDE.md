@@ -58,6 +58,8 @@
 - `KB/0010` L1 内 Hyper-V は labstore/L2 より先に入れる (`Set-VMHost`/`New-VM` の前提)
 - `KB/0016` PowerShell Direct は `-Credential` 必須 (省くと非対話で無言ハング。壊れと誤診しがち)
 - `KB/0017` リポジトリの `.ps1` は **pwsh 7** で実行 (`powershell` 5.1 は cp932 誤読でパースエラー)
+- `KB/0018` 展開済み VM の vCPU/メモリ変更 (create-only が穴。静的リソースは VM オフ必須でドリフト時のみ停止→適用)
+- `KB/0019` ドメインメンバー L2 への WinRM は **Kerberos** が要る (NTLM-by-IP は `0x8009030e` で拒否。鯖故障と誤診しがち)
 
 （0011〜0015 を含む全記事は `KB/README.md` 参照）
 

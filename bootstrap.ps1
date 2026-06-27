@@ -400,6 +400,15 @@ if ($model.domain) {
 # 宣言ファイルで features を持つ Windows L2 があれば Ansible(制御VM->WinRM) で機能導入する。
 # AD 参加後に走るので、ドメインサービスアカウント等を前提にした構成にも続けられる。
 if ($model.vms | Where-Object { ($_.os -notmatch 'ubuntu|debian|linux') -and ($_.features) -and (@($_.features).Count -gt 0) }) {
+    # ドメインがある構成では、メンバーへの WinRM は IP+NTLM では拒否される (KB/0019)。
+    # configure_l2 の前に制御 VM を Kerberos 設定し、FQDN+Kerberos で届くようにする
+    # (ドメインが無ければ Ensure-ControlKerberos.ps1 は自分でスキップする)。
+    if ($model.domain) {
+        Write-Step "制御 VM の Kerberos 設定 (Ensure-ControlKerberos.ps1)"
+        & (Join-Path $RepoRoot "control-node\Ensure-ControlKerberos.ps1") -RepoRoot $RepoRoot -Model $Resolved
+        if ($LASTEXITCODE -ne 0) { Fail "制御 VM の Kerberos 設定に失敗しました。" }
+        Write-Ok "制御 VM Kerberos 設定完了"
+    }
     Write-Step "L2: OS内構成 (Windows features 等, Ansible: configure_l2.yml)"
     & (Join-Path $RepoRoot "control-node\Invoke-Ansible.ps1") -RepoRoot $RepoRoot -Model $Resolved -Playbook "configure_l2.yml" -L1Password $GoldenAdminPassword
     if ($LASTEXITCODE -ne 0) { Fail "L2 OS内構成 (features) に失敗しました。" }
