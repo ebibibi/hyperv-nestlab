@@ -3,15 +3,13 @@
 # 実行タイミング: create_l2 + Initialize-L2Access(IP/WinRM付与) + AD(参加) の後。
 # 接続: 制御VM -> WinRM(L1ルータ経由) -> 各 l2_windows。
 #
-# 重要: ドメインがある構成では DC にはローカル Administrator が存在せず、メンバーも
-# ドメイン参加済みのため、既定のローカル資格情報では接続できない/固まる。
-# そこでドメインがあるときは <NETBIOS>\Administrator(ドメイン管理者) で接続する
-# (group_vars/l2_windows.yml の既定を play レベルで上書き。クラスタ play と同方針)。
+# 接続資格情報は play では設定しない。ドメイン参加の Windows L2 は動的インベントリ
+# (resolved_inventory.py) が FQDN + Kerberos + ドメイン管理者 UPN を hostvars に与え、
+# 非ドメインは group_vars/l2_windows.yml の既定 (ローカル Administrator + NTLM) を使う。
+# play vars はインベントリ hostvars より優先順位が高く、ここで上書きすると Kerberos の
+# UPN を NTLM 形式へ潰してしまうため、あえて空にする (Ensure-ControlKerberos.ps1 / KB/0019)。
 - name: "L2: OS内構成 (Windows features 等)"
   hosts: l2_windows
   gather_facts: false
-  vars:
-    ansible_user: '{{ (domain.netbios ~ "\\Administrator") if domain else (lookup("env","L2_GUEST_USER") | default("Administrator", true)) }}'
-    ansible_password: '{{ lookup("env","L2_GUEST_PASSWORD") | default("P@ssw0rd-Lab-Change!", true) }}'
   roles:
     - role: l2_config

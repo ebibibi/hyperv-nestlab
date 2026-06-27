@@ -83,6 +83,16 @@ def main():
     clusters = {c["name"]: c for c in model.get("clusters", [])}
     cluster_members = {n for c in model.get("clusters", []) for n in c["nodes"]}
 
+    # ドメイン参加 Windows L2 の Kerberos 接続パラメータ。
+    # control(Linux/非ドメイン)->メンバーの WinRM は IP+NTLM pass-through で拒否される
+    # (0x8009030e)。確実なのは Kerberos: FQDN で接続し、ドメイン管理者 UPN + パスワードで
+    # Ansible が自動 kinit する (制御 VM 側は Setup-ControlKerberos.sh が krb5.conf/hosts を用意)。
+    # 詳細は KB/0019。クラスタノードはここでは触らない (S2D の二段委譲は credssp が要るため、
+    # 従来どおり IP + ntlm/credssp を温存する)。
+    domain = model.get("domain")
+    realm = domain["fqdn"].upper() if domain else None
+    guest_pw = os.environ.get("L2_GUEST_PASSWORD", "P@ssw0rd-Lab-Change!")
+
     for vm in model.get("vms", []):
         name = vm["name"]
         os_name = (vm.get("os") or "").lower()
@@ -98,6 +108,15 @@ def main():
         if name in cluster_members:
             inv["cluster_nodes"]["hosts"].append(name)
             hv["cluster"] = next((c for c in clusters.values() if name in c["nodes"]), None)
+        # ドメイン参加 (DC=provision.forest / メンバー=domain_join) かつ非クラスタの
+        # Windows L2 は FQDN + Kerberos + ドメイン管理者 UPN へ切り替える。
+        is_domain_win = grp == "l2_windows" and domain and (
+            vm.get("provision", {}).get("forest") or vm.get("domain_join"))
+        if is_domain_win and name not in cluster_members:
+            hv["ansible_host"] = f"{name}.{domain['fqdn']}"
+            hv["ansible_winrm_transport"] = "kerberos"
+            hv["ansible_user"] = f"Administrator@{realm}"
+            hv["ansible_password"] = guest_pw
         inv["_meta"]["hostvars"][name] = hv
 
     inv["all"] = {"children": ["l0", "l1", "l2_windows", "l2_linux"]}
