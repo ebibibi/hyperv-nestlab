@@ -27,8 +27,10 @@ param(
 $ErrorActionPreference = "Stop"
 function Log($m){ Write-Host "  [krb] $m" -ForegroundColor DarkCyan }
 
-$model = Get-Content $Model -Raw | ConvertFrom-Json
-if (-not $model.domain) { Log "ドメイン無し → Kerberos 設定はスキップ"; exit 0 }
+# 注: PowerShell の変数名は大文字小文字を区別しないため、param の $Model と
+# 同名の $model は同一変数になり代入が壊れる。別名 ($modelObj) を使う。
+$modelObj = Get-Content $Model -Raw | ConvertFrom-Json
+if (-not $modelObj.domain) { Log "ドメイン無し → Kerberos 設定はスキップ"; exit 0 }
 
 $runner = Join-Path $RepoRoot "scripts\ctrl\Run-OnControl.ps1"
 $setup  = Join-Path $RepoRoot "control-node\Setup-ControlKerberos.sh"
