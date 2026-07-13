@@ -40,3 +40,4 @@ Windows golden / S2D まわりの**汎用ノウハウ集**でもあります。
 | [0018](0018-resize-existing-vm-resources.md) | 展開済みVMの vCPU/メモリ変更（宣言値の再適用） | create-only が穴。VMオフ必須でドリフト時のみ停止→適用 |
 | [0019](0019-l2-member-winrm-kerberos.md) | ドメインメンバー L2 への WinRM は Kerberos が要る（NTLM-by-IP は拒否） | 0x8009030e は鯖故障でなく認証経路。FQDN+Kerberos へ |
 | [0020](0020-windows-openssh-probe-hard-timeout.md) | Windows OpenSSH readiness probe can hang forever | Bound each `ssh.exe` process, not just the outer loop |
+| [0021](0021-l2-double-nat-management.md) | L2 needs double NAT for internet while control still needs inbound management | Publish deterministic WinRM/SSH ports and KDC 88 on L1 |

@@ -104,9 +104,9 @@ flowchart TD
 | **L1 ホスト** | L0 物理 / 制御 VM | WinRM/HTTP | `10.20.0.20:5985` | `Administrator` | NTLM | L1 内の Hyper-V/L2 を構成 |
 | **L1 ホスト（画面）** | L0 物理ホスト | Hyper-V コンソール | （VMBus） | `Administrator` | パスワード | GUI 操作・L2 を覗く土台 |
 | **L1 ホスト（画面・RDP）** | L0 物理ホスト | RDP | `10.20.0.20:3389` | `Administrator` | NLA/パスワード | GUI を快適に（CtrlNAT 経由で直接） |
-| **L2 Linux** | 制御 VM | SSH | `10.10.0.x:22` | `labadmin` | 公開鍵（制御 VM の鍵） | Linux ゲストを操作 |
-| **L2 Windows（非ドメイン）** | 制御 VM | WinRM/HTTP | `10.10.0.x:5985` | `Administrator` | NTLM | Windows ゲストを操作 |
-| **L2 Windows（ドメイン参加）** | 制御 VM | WinRM/HTTP | `10.10.0.x:5985` | `NETBIOS\Administrator` | CredSSP または NTLM | DC/クラスタ等の特権操作 |
+| **L2 Linux** | 制御 VM | SSH（L1 NAT静的マッピング） | `10.20.0.20:15xxx` | `labadmin` | 公開鍵（制御 VM の鍵） | Linux ゲストを操作 |
+| **L2 Windows（非ドメイン）** | 制御 VM | WinRM/HTTP（L1 NAT静的マッピング） | `10.20.0.20:15xxx` | `Administrator` | NTLM | Windows ゲストを操作 |
+| **L2 Windows（ドメイン参加）** | 制御 VM | WinRM/HTTP（FQDN＋L1 NAT静的マッピング） | `<host>.<domain>:15xxx` | `NETBIOS\Administrator` | Kerberos | DC/メンバーを操作 |
 | **L2 Windows（画面・RDP）** | **L1 の中から** | RDP | `10.10.0.x:3389` | `Administrator` | NLA/パスワード | GUI を快適に（LabNAT は L1 経由） |
 | **L2（画面）** | L1 内 Hyper-V マネージャー | コンソール | （VMBus） | ゲストの資格情報 | パスワード | IP が無い/壊れた L2 を触る |
 

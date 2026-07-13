@@ -77,6 +77,7 @@ def test_applications_are_inherited_by_admin_vm():
     assert admin01["nics"][0]["dns"] == "10.10.0.10"
     assert admin01["disks"][0]["size_gb"] == 120
     assert admin01["applications"] == ["claude_code", "microsoft_word"]
+    assert admin01["management"] == {"external_port": 15986, "internal_port": 5985}
 
 
 def test_ad_forest_declares_external_dns_forwarders():
