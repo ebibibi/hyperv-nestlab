@@ -3,7 +3,7 @@
 # WinGet is user-registered even when App Installer is staged for all users, so remote
 # management sessions may need to register both the CLI alias and its source extension first.
 
-- name: "Install the latest PowerShell with WinGet"
+- name: "Prepare WinGet for the current remote user"
   ansible.windows.win_powershell:
     error_action: stop
     script: |
@@ -14,7 +14,10 @@
       $userPwsh = Join-Path $env:LOCALAPPDATA 'Microsoft\WindowsApps\pwsh.exe'
       $existingPwsh = @($machinePwsh, $userPwsh) | Where-Object { Test-Path $_ } | Select-Object -First 1
       if ($existingPwsh) {
-        $Ansible.Result = (& $existingPwsh --version | Out-String).Trim()
+        $Ansible.Result = @{
+          needs_install = $false
+          version = (& $existingPwsh --version | Out-String).Trim()
+        }
         return
       }
 
@@ -43,9 +46,24 @@
         Sort-Object Version -Descending | Select-Object -First 1
       if ($sourcePackage) {
         Add-AppxPackage -Register (Join-Path $sourcePackage.InstallLocation 'AppxManifest.xml') `
-          -DisableDevelopmentMode -ForceApplicationShutdown
+          -DisableDevelopmentMode
       }
 
+      # End this module invocation after registration. The package graph is captured when the
+      # PowerShell process starts; WinGet must run in the next Ansible task (a fresh process).
+      $Ansible.Result = @{ needs_install = $true }
+  register: powershell_prepare
+
+- name: "Install the latest PowerShell with WinGet"
+  when: powershell_prepare.result.needs_install | bool
+  ansible.windows.win_powershell:
+    error_action: stop
+    script: |
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      $winget = Get-Command winget.exe -ErrorAction Stop
+      $machinePwsh = 'C:\Program Files\PowerShell\7\pwsh.exe'
+      $userPwsh = Join-Path $env:LOCALAPPDATA 'Microsoft\WindowsApps\pwsh.exe'
       # Install the current stable release, as recommended by the PowerShell documentation.
       & $winget.Source install --id Microsoft.PowerShell --source winget `
         --silent --accept-source-agreements --accept-package-agreements --disable-interactivity
@@ -61,4 +79,7 @@
 
 - name: "PowerShell version"
   ansible.builtin.debug:
-    var: powershell_install.result
+    msg: >-
+      {{ powershell_install.result
+         if powershell_install.result is defined
+         else powershell_prepare.result.version }}
