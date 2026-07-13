@@ -64,6 +64,7 @@
           },
           "roles": { "type": "array", "items": { "type": "string" } },
           "features": { "type": "array", "items": { "type": "string" } },
+          "applications": { "$ref": "#/$defs/applications" },
           "cluster": { "$ref": "#/$defs/groupCluster" },
           "overrides": {
             "type": "object",
@@ -93,7 +94,16 @@
         "domain_join": { "type": ["string", "boolean"] },
         "disk_gb": { "type": "number", "minimum": 20 },
         "language": { "type": "string" },
-        "features": { "type": "array", "items": { "type": "string" } }
+        "features": { "type": "array", "items": { "type": "string" } },
+        "applications": { "$ref": "#/$defs/applications" }
+      }
+    },
+    "applications": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": ["claude_code", "microsoft_word"]
       }
     },
     "disk": {
@@ -137,7 +147,8 @@
         "disks": { "type": "array", "items": { "$ref": "#/$defs/disk" } },
         "nics": { "type": "array", "items": { "$ref": "#/$defs/nic" } },
         "provision": { "$ref": "#/$defs/provision" },
-        "features": { "type": "array", "items": { "type": "string" } }
+        "features": { "type": "array", "items": { "type": "string" } },
+        "applications": { "$ref": "#/$defs/applications" }
       }
     },
     "vmExplicit": {
@@ -155,7 +166,8 @@
         "disks": { "type": "array", "items": { "$ref": "#/$defs/disk" } },
         "nics": { "type": "array", "items": { "$ref": "#/$defs/nic" } },
         "provision": { "$ref": "#/$defs/provision" },
-        "features": { "type": "array", "items": { "type": "string" } }
+        "features": { "type": "array", "items": { "type": "string" } },
+        "applications": { "$ref": "#/$defs/applications" }
       }
     },
     "groupCluster": {

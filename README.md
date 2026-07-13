@@ -121,6 +121,8 @@ groups:
     features: [Web-Server, Web-Mgmt-Console, Web-Windows-Auth]   # ← IIS 一式
 ```
 `bootstrap.ps1` 実行時、AD 参加の後に `configure_l2.yml`（role `l2_config` → `ansible.windows.win_feature`）が走る。
+
+同じ場所へ `applications: [claude_code, microsoft_word]` を宣言すると、AD参加後に対象VMだけへClaude CodeとMicrosoft 365 Apps版Wordを冪等導入できる。Wordのライセンス認証とClaude Codeのアカウント認証は、対象ユーザーがRDPログオン後に行う。
 `features` は冪等（既に入っていれば no-change）。`Web-Server` 以外の任意の Windows 機能名を並べられる。
 
 ドメイン参加メンバーへの接続は **Kerberos**（FQDN + ドメイン管理者 UPN）で行う。制御 VM は

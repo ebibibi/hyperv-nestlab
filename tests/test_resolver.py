@@ -71,6 +71,14 @@ def test_override_escape_hatch():
     assert fs01["cpu"] == 16   # overrides がグループ既定を上書き
 
 
+def test_applications_are_inherited_by_admin_vm():
+    m = build(FIX / "good-applications.yml")
+    admin01 = next(v for v in m["vms"] if v["name"] == "admin01")
+    assert admin01["nics"][0]["dns"] == "10.10.0.10"
+    assert admin01["disks"][0]["size_gb"] == 120
+    assert admin01["applications"] == ["claude_code", "microsoft_word"]
+
+
 # ---------------- 異常系 ----------------
 
 def test_duplicate_ip_detected():
@@ -86,3 +94,17 @@ def test_ip_out_of_subnet_detected():
 def test_schema_error_on_missing_required():
     with pytest.raises(resolve.ConfigError, match="スキーマ検証エラー"):
         build(FIX / "bad-schema.yml")
+
+
+def test_schema_rejects_unknown_application(tmp_path):
+    bad = tmp_path / "bad-application.yml"
+    bad.write_text(
+        "groups:\n"
+        "  - name: app\n"
+        "    count: 1\n"
+        "    ip_from: 10.10.0.40\n"
+        "    applications: [unknown_app]\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(resolve.ConfigError, match="スキーマ検証エラー"):
+        build(bad)
