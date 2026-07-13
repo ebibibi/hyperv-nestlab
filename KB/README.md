@@ -41,3 +41,4 @@ Windows golden / S2D まわりの**汎用ノウハウ集**でもあります。
 | [0019](0019-l2-member-winrm-kerberos.md) | ドメインメンバー L2 への WinRM は Kerberos が要る（NTLM-by-IP は拒否） | 0x8009030e は鯖故障でなく認証経路。FQDN+Kerberos へ |
 | [0020](0020-windows-openssh-probe-hard-timeout.md) | Windows OpenSSH readiness probe can hang forever | Bound each `ssh.exe` process, not just the outer loop |
 | [0021](0021-l2-double-nat-management.md) | L2 needs double NAT for internet while control still needs inbound management | Publish deterministic WinRM/SSH ports and KDC 88 on L1 |
+| [0022](0022-l1-os-disk-declaration-not-applied.md) | L1 OS disk declaration was ignored for cloned golden images | Reconcile VHDX size and extend C: through PowerShell Direct |

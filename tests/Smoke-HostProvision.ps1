@@ -40,18 +40,27 @@ try {
     Add-Step "nat_exists" ([bool](Get-NetNat -Name "$Switch-NAT" -ErrorAction SilentlyContinue))
     $vmId1 = $vm.Id
 
-    # 2nd run (冪等性: 何も変更しないはず)
+    # 2nd run: an increased disk declaration must converge an existing VHDX.
     $natChanged2 = Ensure-NatNetwork -SwitchName $Switch -Subnet $Subnet -HostIp $HostIp
-    $vmChanged2  = Ensure-LabVm -Name $Name -Cpu 2 -MemoryGB 2 -Switch $Switch -DiskGB 8 -StaticMemory -Nested
+    $vmChanged2  = Ensure-LabVm -Name $Name -Cpu 2 -MemoryGB 2 -Switch $Switch -DiskGB 9 -StaticMemory -Nested
     Add-Step "second_run_nat_changed" $natChanged2
     Add-Step "second_run_vm_changed"  $vmChanged2
+    $osDisk = (Get-VMHardDiskDrive -VMName $Name | Select-Object -First 1).Path
+    Add-Step "disk_expanded_to_9gb" ((Get-VHD -Path $osDisk).Size -eq 9GB)
     Add-Step "vm_id_stable" ((Get-VM -Name $Name).Id -eq $vmId1)
     Add-Step "vm_count_is_one" (@(Get-VM -Name $Name).Count -eq 1)
 
-    $idempotent = (-not $natChanged2) -and (-not $vmChanged2)
+    # 3rd run: the converged declaration must be no-change.
+    $natChanged3 = Ensure-NatNetwork -SwitchName $Switch -Subnet $Subnet -HostIp $HostIp
+    $vmChanged3  = Ensure-LabVm -Name $Name -Cpu 2 -MemoryGB 2 -Switch $Switch -DiskGB 9 -StaticMemory -Nested
+    Add-Step "third_run_nat_changed" $natChanged3
+    Add-Step "third_run_vm_changed"  $vmChanged3
+    $idempotent = (-not $natChanged3) -and (-not $vmChanged3)
     Add-Step "idempotent" $idempotent
 
     $r.ok = ($vmChanged1 -or $natChanged1) -and `
+            $vmChanged2 -and `
+            ((Get-VHD -Path $osDisk).Size -eq 9GB) -and `
             $idempotent -and `
             [bool]$proc.ExposeVirtualizationExtensions -and `
             (-not $memObj.DynamicMemoryEnabled) -and `

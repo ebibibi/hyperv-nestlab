@@ -105,6 +105,18 @@ try {
         $out = @()
         $reboot = $false
 
+        # The L0 provisioner expands the VHDX to l1.disk_gb. Consume any newly available
+        # space in C: here through PowerShell Direct. A small tolerance avoids repeated
+        # writes caused by partition-alignment differences.
+        $partition = Get-Partition -DriveLetter C
+        $supported = Get-PartitionSupportedSize -DriveLetter C
+        if (($supported.SizeMax - $partition.Size) -gt 64MB) {
+            Resize-Partition -DriveLetter C -Size $supported.SizeMax
+            $out += "C: を $([math]::Round($supported.SizeMax / 1GB, 1)) GB へ拡張"
+        } else {
+            $out += "C: は利用可能領域まで拡張済み"
+        }
+
         # CtrlNAT アップリンクを MAC で一意特定する (KB/0012)。
         # 「最初の Up な NIC」だと、setup_l1 が作る内部スイッチ vEthernet(LabNAT) が出来た後の
         # 再実行で誤選択し、制御 IP を LabNAT 側に載せ替えて ARP 応答が割れ「No route to host」に
