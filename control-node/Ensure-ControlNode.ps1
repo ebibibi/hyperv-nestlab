@@ -129,7 +129,11 @@ $sshOpts = @(
 # can remain alive after the remote command has completed, which would freeze this loop before
 # the outer stopwatch gets another chance to evaluate TimeoutSec. Give every individual probe a
 # hard 15-second process deadline and kill its process tree when exceeded (KB/0020).
-function Invoke-SshReadinessProbe {
+function Invoke-BoundedSshCommand {
+    param(
+        [Parameter(Mandatory)][string]$Command,
+        [int]$DeadlineMilliseconds = 15000
+    )
     $psi = [System.Diagnostics.ProcessStartInfo]::new()
     $psi.FileName = "ssh"
     $psi.UseShellExecute = $false
@@ -139,12 +143,12 @@ function Invoke-SshReadinessProbe {
     $psi.RedirectStandardError = $false
     foreach ($arg in $sshOpts) { [void]$psi.ArgumentList.Add($arg) }
     [void]$psi.ArgumentList.Add("labadmin@$ip")
-    [void]$psi.ArgumentList.Add("test -s /home/labadmin/ansible-ready.txt")
+    [void]$psi.ArgumentList.Add($Command)
 
     $process = [System.Diagnostics.Process]::new()
     $process.StartInfo = $psi
     [void]$process.Start()
-    if (-not $process.WaitForExit(15000)) {
+    if (-not $process.WaitForExit($DeadlineMilliseconds)) {
         $process.Kill($true)
         $process.WaitForExit()
         return 124
@@ -154,16 +158,16 @@ function Invoke-SshReadinessProbe {
 
 $ready = $false
 while ($sw.Elapsed.TotalSeconds -lt $TimeoutSec) {
-    $probeExitCode = Invoke-SshReadinessProbe
+    $probeExitCode = Invoke-BoundedSshCommand -Command "test -s /home/labadmin/ansible-ready.txt"
     if ($probeExitCode -eq 0) { $ready = $true; break }
     Start-Sleep -Seconds 10
 }
 if (-not $ready) { throw "制御ノードの準備がタイムアウトしました (cloud-init/ansible 未完了の可能性)。" }
-Log "SSH 疎通 OK / $out"
+Log "SSH 疎通 OK"
 
 # ansible 動作確認 (localhost ping)
-$ping = & ssh @sshOpts "labadmin@$ip" "ansible -i localhost, -c local -m ping all" 2>&1
-Log "ansible ping 結果:"
-$ping | ForEach-Object { Write-Host "    $_" }
-if ($ping -match "SUCCESS|pong") { Log "制御ノード疎通・Ansible 動作を確認しました"; exit 0 }
+$pingExitCode = Invoke-BoundedSshCommand `
+    -Command "ansible -i localhost, -c local -m ping all" `
+    -DeadlineMilliseconds 30000
+if ($pingExitCode -eq 0) { Log "制御ノード疎通・Ansible 動作を確認しました"; exit 0 }
 throw "ansible ping が成功しませんでした。"

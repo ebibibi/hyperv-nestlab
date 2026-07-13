@@ -13,9 +13,12 @@ def test_readiness_probe_has_noninteractive_keepalive_limits():
     assert '"BatchMode=yes"' in script
     assert '"ServerAliveInterval=5"' in script
     assert '"ServerAliveCountMax=3"' in script
-    assert ".WaitForExit(15000)" in script
+    assert ".WaitForExit($DeadlineMilliseconds)" in script
     assert ".Kill($true)" in script
     assert "$psi.RedirectStandardOutput = $false" in script
     assert "$psi.RedirectStandardError = $false" in script
     assert ".StandardOutput.ReadToEnd()" not in script
     assert '"test -s /home/labadmin/ansible-ready.txt"' in script
+    assert 'Invoke-BoundedSshCommand `' in script
+    assert '-Command "ansible -i localhost, -c local -m ping all"' in script
+    assert "& ssh @sshOpts" not in script

@@ -32,6 +32,8 @@ will exit within a fixed wall-clock time.
    `Kill(true)` to remove the entire stuck process tree and lets the outer readiness loop retry.
 3. No redirected SSH output streams. The remote command uses `test -s` and readiness is determined
    only from the process exit code, avoiding an EOF wait after `ssh.exe` has exited.
+4. The subsequent Ansible self-test uses the same bounded process helper. Leaving even one direct
+   `& ssh ... 2>&1` call in this path can reintroduce the hang after readiness succeeds.
 
 A static regression test in `tests/test_control_node_scripts.py` ensures these safeguards remain.
 
