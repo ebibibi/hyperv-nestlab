@@ -164,7 +164,11 @@ try {
             if ($dnsForwarderCsv) {
                 $wanted = @($dnsForwarderCsv -split ',' | Where-Object { $_ })
                 $current = @((Get-DnsServerForwarder -EA SilentlyContinue).IPAddress | ForEach-Object { $_.IPAddressToString })
-                if ((Compare-Object ($current | Sort-Object) ($wanted | Sort-Object)).Count -gt 0) {
+                # Compare-Object rejects a null ReferenceObject. PowerShell unwraps an empty
+                # pipeline result to $null, which is exactly the first-run state on a new DC.
+                $currentKey = (($current | Sort-Object) -join ',')
+                $wantedKey = (($wanted | Sort-Object) -join ',')
+                if ($currentKey -ne $wantedKey) {
                     Set-DnsServerForwarder -IPAddress $wanted -UseRootHint $true
                     $o += "forwarders=$($wanted -join ',') を設定"
                 } else { $o += "forwarders 既存 ($($wanted -join ','))" }
