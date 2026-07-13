@@ -46,6 +46,7 @@ if (-not $dcs) { throw "DC がありません。" }
 $dc = $dcs[0]
 $dcIp = $dc.nics[0].ip
 $dcGw = $dc.nics[0].gw
+$dnsForwarderCsv = (@($domain.dns_forwarders) -join ',')
 
 # --- L1 への永続セッション ---
 $l1cred = New-Object System.Management.Automation.PSCredential($L1User,(ConvertTo-SecureString $L1Password -AsPlainText -Force))
@@ -55,7 +56,7 @@ $l1 = New-PSSession -VMName $L1Name -Credential $l1cred
 try {
     # L1 上で全工程を実行 (ゲストへの二段 PS Direct + 再起動待ちは L1 ローカルで完結)
     $result = Invoke-Command -Session $l1 -ScriptBlock {
-        param($dcName,$dcIp,$dcGw,$prefix,$fqdn,$netbios,$dsrm,$guestPw,$memberJson)
+        param($dcName,$dcIp,$dcGw,$prefix,$fqdn,$netbios,$dsrm,$guestPw,$memberJson,$dnsForwarderCsv)
         $ErrorActionPreference = 'Stop'
         $log = New-Object System.Collections.ArrayList
         function W($m){ [void]$log.Add($m) }
@@ -151,7 +152,7 @@ try {
         # メンバ参加が "ドメインに到達できません" で失敗する。前方参照ゾーンを保証し SRV を再登録する。
         W "DC ${dcName}: DNS ゾーン/SRV を健全化"
         $dnsfix = In-Guest $dcName $domCred {
-            param($fqdn)
+            param($fqdn,$dnsForwarderCsv)
             $o=@()
             try { if ((Get-Service ADWS -EA SilentlyContinue).Status -ne 'Running') { Start-Service ADWS -EA SilentlyContinue } } catch {}
             try {
@@ -160,6 +161,14 @@ try {
                     $o += "forward zone $fqdn を作成"
                 } else { $o += "forward zone 既存" }
             } catch { $o += "zone作成失敗: $($_.Exception.Message.Substring(0,[math]::Min(60,$_.Exception.Message.Length)))" }
+            if ($dnsForwarderCsv) {
+                $wanted = @($dnsForwarderCsv -split ',' | Where-Object { $_ })
+                $current = @((Get-DnsServerForwarder -EA SilentlyContinue).IPAddress | ForEach-Object { $_.IPAddressToString })
+                if ((Compare-Object ($current | Sort-Object) ($wanted | Sort-Object)).Count -gt 0) {
+                    Set-DnsServerForwarder -IPAddress $wanted -UseRootHint $true
+                    $o += "forwarders=$($wanted -join ',') を設定"
+                } else { $o += "forwarders 既存 ($($wanted -join ','))" }
+            }
             try { Restart-Service Netlogon -Force -EA Stop; $o += "Netlogon 再起動(SRV再登録)" } catch {}
             Start-Sleep 8
             ipconfig /registerdns | Out-Null
@@ -167,7 +176,7 @@ try {
             $srv = try { (Resolve-DnsName -Name "_ldap._tcp.dc._msdcs.$fqdn" -Type SRV -Server 127.0.0.1 -EA Stop | Select-Object -First 1).NameTarget } catch { "SRV未解決" }
             $o += "SRV=$srv"
             $o
-        } @($fqdn) 180
+        } @($fqdn,$dnsForwarderCsv) 180
         $dnsfix | ForEach-Object { W "DC ${dcName}: $_" }
 
         # ===== メンバ =====
@@ -233,7 +242,7 @@ try {
         }
 
         return $log
-    } -ArgumentList $dc.name,$dcIp,$dcGw,$prefix,$domain.fqdn,$domain.netbios,$domain.dsrm_password,$GuestPassword,($members | Select-Object name,@{n='ip';e={$_.nics[0].ip}} | ConvertTo-Json -Compress -Depth 5)
+    } -ArgumentList $dc.name,$dcIp,$dcGw,$prefix,$domain.fqdn,$domain.netbios,$domain.dsrm_password,$GuestPassword,($members | Select-Object name,@{n='ip';e={$_.nics[0].ip}} | ConvertTo-Json -Compress -Depth 5),$dnsForwarderCsv
 
     $result | ForEach-Object { Log $_ }
 }

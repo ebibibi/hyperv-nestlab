@@ -14,6 +14,8 @@ domain:
   fqdn: corp.contoso.local
   netbios: CORP
   dsrm_password: "P@ssw0rd-DSRM-Lab!"
+  # Domain members query dc01 only; dc01 forwards public lookups upstream.
+  dns_forwarders: [1.1.1.1, 8.8.8.8]
   controllers:
     - { name: dc01, ip: 10.10.0.10 }
 
