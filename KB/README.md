@@ -42,3 +42,4 @@ Windows golden / S2D まわりの**汎用ノウハウ集**でもあります。
 | [0020](0020-windows-openssh-probe-hard-timeout.md) | Windows OpenSSH readiness probe can hang forever | Bound each `ssh.exe` process, not just the outer loop |
 | [0021](0021-l2-double-nat-management.md) | L2 needs double NAT for internet while control still needs inbound management | Publish deterministic WinRM/SSH ports and KDC 88 on L1 |
 | [0022](0022-l1-os-disk-declaration-not-applied.md) | L1 OS disk declaration was ignored for cloned golden images | Reconcile VHDX size and extend C: through PowerShell Direct |
+| [0023](0023-winget-missing-in-remote-session.md) | WinGet is missing or its source fails in remote Windows sessions | Register App Installer and the source MSIX in the current user package graph |
