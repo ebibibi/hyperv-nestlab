@@ -396,6 +396,20 @@ if ($model.domain) {
     Write-Ok "AD フォレスト構築完了"
 }
 
+# ---------------------------------------------------------------- 6a. Windows 共通ベースライン
+# L0 / L1 / 全 Windows L2 に最新 stable PowerShell を WinGet で冪等導入する。
+# optional な features/applications の有無に依存させず、Windows が1台でもあれば必ず適用する。
+if ($model.domain) {
+    Write-Step "制御 VM の Kerberos 設定 (Windows baseline用)"
+    & (Join-Path $RepoRoot "control-node\Ensure-ControlKerberos.ps1") -RepoRoot $RepoRoot -Model $Resolved
+    if ($LASTEXITCODE -ne 0) { Fail "制御 VM Kerberos設定に失敗しました。" }
+    Write-Ok "制御 VM Kerberos設定完了"
+}
+Write-Step "全Windowsへ最新PowerShellをWinGetで導入 (Ansible: configure_windows_baseline.yml)"
+& (Join-Path $RepoRoot "control-node\Invoke-Ansible.ps1") -RepoRoot $RepoRoot -Model $Resolved -Playbook "configure_windows_baseline.yml" -L1Password $GoldenAdminPassword
+if ($LASTEXITCODE -ne 0) { Fail "Windows共通ベースラインの構成に失敗しました。" }
+Write-Ok "Windows共通ベースライン構成完了"
+
 # ---------------------------------------------------------------- 6b. L2 OS内構成 (features / IIS 等)
 # 宣言ファイルで features を持つ Windows L2 があれば Ansible(制御VM->WinRM) で機能導入する。
 # AD 参加後に走るので、ドメインサービスアカウント等を前提にした構成にも続けられる。

@@ -1,0 +1,64 @@
+---
+# Common baseline for every Windows system managed by the lab.
+# WinGet is user-registered even when App Installer is staged for all users, so remote
+# management sessions may need to register both the CLI alias and its source extension first.
+
+- name: "Install the latest PowerShell with WinGet"
+  ansible.windows.win_powershell:
+    error_action: stop
+    script: |
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+
+      $machinePwsh = 'C:\Program Files\PowerShell\7\pwsh.exe'
+      $userPwsh = Join-Path $env:LOCALAPPDATA 'Microsoft\WindowsApps\pwsh.exe'
+      $existingPwsh = @($machinePwsh, $userPwsh) | Where-Object { Test-Path $_ } | Select-Object -First 1
+      if ($existingPwsh) {
+        $Ansible.Result = (& $existingPwsh --version | Out-String).Trim()
+        return
+      }
+
+      # Windows Server 2025 stages App Installer for all users, but a WinRM user may not yet
+      # have the winget App Execution Alias registered. This is Microsoft's documented command.
+      $winget = Get-Command winget.exe -ErrorAction SilentlyContinue
+      if (-not $winget) {
+        Add-AppxPackage -RegisterByFamilyName `
+          -MainPackage Microsoft.DesktopAppInstaller_8wekyb3d8bbwe
+        $winget = Get-Command winget.exe -ErrorAction SilentlyContinue
+      }
+      if (-not $winget) {
+        throw 'WinGet registration completed, but winget.exe is still unavailable.'
+      }
+
+      # The pre-indexed community source is another MSIX extension. A freshly registered
+      # remote user can download it successfully yet fail with 0x8a15000f until its manifest
+      # is explicitly registered in the current package graph.
+      & $winget.Source source update --name winget --disable-interactivity | Out-Null
+      if ($LASTEXITCODE -ne 0) {
+        & $winget.Source source reset --force --disable-interactivity | Out-Null
+        & $winget.Source source update --name winget --disable-interactivity | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "winget source update failed: $LASTEXITCODE" }
+      }
+      $sourcePackage = Get-AppxPackage -AllUsers -Name Microsoft.Winget.Source |
+        Sort-Object Version -Descending | Select-Object -First 1
+      if ($sourcePackage) {
+        Add-AppxPackage -Register (Join-Path $sourcePackage.InstallLocation 'AppxManifest.xml') `
+          -DisableDevelopmentMode -ForceApplicationShutdown
+      }
+
+      # Install the current stable release, as recommended by the PowerShell documentation.
+      & $winget.Source install --id Microsoft.PowerShell --source winget `
+        --silent --accept-source-agreements --accept-package-agreements --disable-interactivity
+      if ($LASTEXITCODE -ne 0) { throw "winget install Microsoft.PowerShell failed: $LASTEXITCODE" }
+
+      $installedPwsh = @($machinePwsh, $userPwsh) | Where-Object { Test-Path $_ } | Select-Object -First 1
+      if (-not $installedPwsh) {
+        throw 'WinGet completed, but pwsh.exe was not found.'
+      }
+      $Ansible.Changed = $true
+      $Ansible.Result = (& $installedPwsh --version | Out-String).Trim()
+  register: powershell_install
+
+- name: "PowerShell version"
+  ansible.builtin.debug:
+    var: powershell_install.result

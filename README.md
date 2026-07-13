@@ -122,6 +122,10 @@ groups:
 ```
 `bootstrap.ps1` 実行時、AD 参加の後に `configure_l2.yml`（role `l2_config` → `ansible.windows.win_feature`）が走る。
 
+L0、L1、全Windows L2には、`configure_windows_baseline.yml` が最新stable PowerShellを
+`winget install --id Microsoft.PowerShell --source winget` で冪等導入する。個別VMの
+`features` / `applications` 宣言は不要で、今後追加するWindows VMも自動的に対象になる。
+
 同じ場所へ `applications: [claude_code, microsoft_word]` を宣言すると、AD参加後に対象VMだけへClaude CodeとMicrosoft 365 Apps版Wordを冪等導入できる。Wordのライセンス認証とClaude Codeのアカウント認証は、対象ユーザーがRDPログオン後に行う。
 `features` は冪等（既に入っていれば no-change）。`Web-Server` 以外の任意の Windows 機能名を並べられる。
 
