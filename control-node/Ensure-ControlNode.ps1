@@ -133,11 +133,13 @@ function Invoke-SshReadinessProbe {
     $psi = [System.Diagnostics.ProcessStartInfo]::new()
     $psi.FileName = "ssh"
     $psi.UseShellExecute = $false
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError = $true
+    # Do not redirect output here. On Windows OpenSSH, ReadToEnd() can wait forever for EOF
+    # even after ssh.exe itself has exited. The remote test command's exit code is sufficient.
+    $psi.RedirectStandardOutput = $false
+    $psi.RedirectStandardError = $false
     foreach ($arg in $sshOpts) { [void]$psi.ArgumentList.Add($arg) }
     [void]$psi.ArgumentList.Add("labadmin@$ip")
-    [void]$psi.ArgumentList.Add("test -f /home/labadmin/ansible-ready.txt && cat /home/labadmin/ansible-ready.txt")
+    [void]$psi.ArgumentList.Add("test -s /home/labadmin/ansible-ready.txt")
 
     $process = [System.Diagnostics.Process]::new()
     $process.StartInfo = $psi
@@ -145,17 +147,15 @@ function Invoke-SshReadinessProbe {
     if (-not $process.WaitForExit(15000)) {
         $process.Kill($true)
         $process.WaitForExit()
-        return [pscustomobject]@{ ExitCode = 124; Output = $null }
+        return 124
     }
-    $output = $process.StandardOutput.ReadToEnd().Trim()
-    return [pscustomobject]@{ ExitCode = $process.ExitCode; Output = $output }
+    return $process.ExitCode
 }
 
 $ready = $false
 while ($sw.Elapsed.TotalSeconds -lt $TimeoutSec) {
-    $probe = Invoke-SshReadinessProbe
-    $out = $probe.Output
-    if ($probe.ExitCode -eq 0 -and $out) { $ready = $true; break }
+    $probeExitCode = Invoke-SshReadinessProbe
+    if ($probeExitCode -eq 0) { $ready = $true; break }
     Start-Sleep -Seconds 10
 }
 if (-not $ready) { throw "制御ノードの準備がタイムアウトしました (cloud-init/ansible 未完了の可能性)。" }

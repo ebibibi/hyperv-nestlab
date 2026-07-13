@@ -30,6 +30,8 @@ will exit within a fixed wall-clock time.
 1. Non-interactive SSH options (`BatchMode=yes` and bounded server keepalives).
 2. A .NET `Process` wrapper with a hard 15-second `WaitForExit` deadline. When exceeded, it calls
    `Kill(true)` to remove the entire stuck process tree and lets the outer readiness loop retry.
+3. No redirected SSH output streams. The remote command uses `test -s` and readiness is determined
+   only from the process exit code, avoiding an EOF wait after `ssh.exe` has exited.
 
 A static regression test in `tests/test_control_node_scripts.py` ensures these safeguards remain.
 
@@ -39,5 +41,6 @@ A static regression test in `tests/test_control_node_scripts.py` ensures these s
   forever.
 - Bound both levels: the individual process execution and the overall retry window.
 - `ConnectTimeout` is not a command timeout.
+- Avoid `ReadToEnd()` in a readiness probe when the exit code can express the complete result.
 - On cancellation, confirm that remote-shell child processes actually terminated; interrupting the
   client-side SSH session does not always clean up Windows-hosted descendants.
