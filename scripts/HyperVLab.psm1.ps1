@@ -76,6 +76,7 @@ function Ensure-LabVm {
     )
     $changed = $false
     $mem = [int64]$MemoryGB * 1GB
+    $desiredDiskBytes = [int64]$DiskGB * 1GB
 
     if (-not (Get-VM -Name $Name -ErrorAction SilentlyContinue)) {
         $vmRoot = if ($DataRoot) { $DataRoot } elseif ($env:NESTEDLAB_DATA_ROOT) { $env:NESTEDLAB_DATA_ROOT } else { (Get-VMHost).VirtualHardDiskPath }
@@ -86,7 +87,7 @@ function Ensure-LabVm {
             if ($BaseImage -and (Test-Path $BaseImage)) {
                 Copy-Item -Path $BaseImage -Destination $osDisk
             } else {
-                New-VHD -Path $osDisk -SizeBytes ([int64]$DiskGB * 1GB) -Dynamic | Out-Null
+                New-VHD -Path $osDisk -SizeBytes $desiredDiskBytes -Dynamic | Out-Null
             }
         }
         New-VM -Name $Name -MemoryStartupBytes $mem -Generation $Generation `
@@ -102,6 +103,18 @@ function Ensure-LabVm {
             Set-VMFirmware -VMName $Name -SecureBootTemplate MicrosoftWindows
         }
         $changed = $true
+    }
+
+    # A cloned golden keeps the source VHDX maximum size (currently 40 GB). Reconcile both
+    # newly cloned and already deployed OS disks with the declarative DiskGB value. Expansion
+    # of a Gen2 SCSI VHDX is supported while running; never shrink a disk that is already larger.
+    $osDrive = Get-VMHardDiskDrive -VMName $Name | Select-Object -First 1
+    if ($osDrive -and $osDrive.Path) {
+        $vhd = Get-VHD -Path $osDrive.Path
+        if ($vhd.Size -lt $desiredDiskBytes) {
+            Resize-VHD -Path $osDrive.Path -SizeBytes $desiredDiskBytes
+            $changed = $true
+        }
     }
 
     # vCPU / 静的メモリ / Nested拡張(ExposeVirtualizationExtensions) は Hyper-V の仕様上

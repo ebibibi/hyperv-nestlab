@@ -217,7 +217,7 @@ python tools/resolve.py --l1 l1/standard-host.yml --l2 l2/ad-forest.yml --valida
 ## 設計上の要点・既知のハマりどころ
 - **L2 OS ディスクは差分(ディファレンシング)ディスク**で golden/cloud image から作成。
   一瞬で済み容量も最小 (Windows L2 は初期 ~300MB)。
-- **golden/L2 は L1 の OS ディスクではなくラボストア(L:)** に置く (OS ディスクは golden 由来で小さいため)。
+- **golden/L2 は L1 の OS ディスクではなくラボストア(L:)** に置く (L1 OS は宣言値へ拡張するが、用途を分離するため)。
 - `ansible.windows.win_powershell` の引数は文字列で渡るため、数値は必ず `[int]` 等で型付け
   (`"4"*1GB` が文字列反復になり OutOfMemoryException になる)。
 - 統合コンポーネント名はロケール依存のため ID で特定 (日本語ホスト対応)。

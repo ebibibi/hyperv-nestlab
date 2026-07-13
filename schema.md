@@ -88,7 +88,7 @@ l1_host:
   cpu: 8                     # 必須
   memory_gb: 32              # 必須。静的メモリ（動的メモリは強制 OFF）
   nested: true               # 既定 true。ExposeVirtualizationExtensions
-  disk_gb: 120               # L1 の OS ディスク
+  disk_gb: 160               # L1 の OS ディスク
   base_image: win2025-eval   # images カタログの論理キー
   network:
     nat:

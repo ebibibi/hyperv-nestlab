@@ -65,8 +65,8 @@
 
 補足 (KB 化するほどでもない定常事実):
 - L1/L2 admin (golden 既定): `Administrator` / `P@ssw0rd-Lab-Change!`。
-- L1 の OS ディスクは golden 由来で 40GB と小さい。golden/L2 は **ラボストア (L:, Add-L1LabStore.ps1)**
-  に置き、L2 OS は **差分(ディファレンシング)ディスク**。
+- L1 の OS ディスクは 40GB golden を複製後、`l1.disk_gb` へ自動拡張する。golden/L2 は
+  **ラボストア (L:, Add-L1LabStore.ps1)** に置き、L2 OS は **差分(ディファレンシング)ディスク**。
 
 ## 主要スクリプト
 - `bootstrap.ps1` — 単一エントリ (解決→images(Datacenter golden)→L1→制御VM→L1到達→setup_l1→

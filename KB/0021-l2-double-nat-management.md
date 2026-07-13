@@ -1,9 +1,32 @@
+---
+type: kb
+title: Double NAT for L2 internet access while preserving management
+symptom: L2 guests can reach internal services but cannot resolve public DNS or use HTTPS
+status: resolved
+date: 2026-07-13
+updated: 2026-07-13
+component: nested-networking
+tags:
+  - hyper-v
+  - nat
+  - kerberos
+  - winrm
+scope: project
+context: hyperv-nestlab
+---
+
 # 0021 — Double NAT for L2 internet access while preserving management
 
 ## Symptom
 
 L2 guests on `10.10.0.0/24` could reach `dc01`, but neither direct public DNS nor HTTPS worked.
 The L1 host itself had normal internet access on `10.20.0.0/24`.
+
+## Environment
+
+- L0 CtrlNAT: `10.20.0.0/24`
+- L1 LabNAT: `10.10.0.0/24`
+- L2 Active Directory DNS: `dc01` at `10.10.0.10`
 
 ## Cause
 
@@ -39,3 +62,8 @@ without exposing L2 directly on the physical LAN.
 - Outbound NAT removes unsolicited inbound management; publish only the required ports.
 - Kerberos can cross a port mapping if the client still connects by the service FQDN and the KDC
   remains reachable.
+
+## Related
+
+- `KB/0003-nested-l2-reachability-router.md`
+- `KB/0019-l2-member-winrm-kerberos.md`

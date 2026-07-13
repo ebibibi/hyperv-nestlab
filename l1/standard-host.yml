@@ -5,7 +5,7 @@ l1_host:
   cpu: 8
   memory_gb: 32          # 静的メモリ（動的メモリは強制 OFF）
   nested: true           # ExposeVirtualizationExtensions = $true
-  disk_gb: 120
+  disk_gb: 160
   base_image: win2025-golden
   l0_switch: "Default Switch"   # L0 物理ホスト上で L1 VM を接続するスイッチ
   network:
