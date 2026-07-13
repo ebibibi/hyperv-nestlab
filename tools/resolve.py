@@ -256,6 +256,15 @@ def resolve(l1, l2):
                 )
             vm["base_image_file"] = golden_pattern.format(lang=lang)
 
+    # L1 performs the first stage of double NAT for transparent L2 internet access.
+    # Give every L2 VM a deterministic inbound management port on the L1 uplink so the
+    # control VM can still reach WinRM/SSH across that NAT boundary.
+    for index, vm in enumerate(vms):
+        vm["management"] = {
+            "external_port": 15985 + index,
+            "internal_port": 22 if is_linux_os(vm.get("os")) else 5985,
+        }
+
     # --- 整備が必要なイメージ集合 (bootstrap が DL/ビルドする) ---
     needed = {}
 
@@ -298,6 +307,7 @@ def resolve(l1, l2):
             "language": L1_LANG,
             "l0_switch": l1h.get("l0_switch", "Default Switch"),
             "nat": {"switch": switch, "subnet": str(subnet), "host_ip": gw},
+            "management_ip": "10.20.0.20",
         },
         "domain": domain,
         "vms": vms,

@@ -29,7 +29,7 @@ if not d:
 
 realm = d["fqdn"].upper()
 realm_lower = d["fqdn"].lower()
-kdc = d["controllers"][0]["ip"]
+kdc = m["l1"].get("management_ip", "10.20.0.20")
 
 # Domain-participating Windows VMs: the DC carries provision.forest; members carry a
 # truthy domain_join (the FQDN to join). Both need an FQDN->IP entry so Kerberos by name
@@ -41,7 +41,7 @@ for vm in m.get("vms", []):
     nics = vm.get("nics") or []
     if not nics or not nics[0].get("ip"):
         continue
-    entries.append((nics[0]["ip"], "%s.%s" % (vm["name"], realm_lower), vm["name"]))
+    entries.append((kdc, "%s.%s" % (vm["name"], realm_lower), vm["name"]))
 
 krb5 = """[libdefaults]
     default_realm = %s
@@ -68,6 +68,7 @@ BEGIN = "# >>> nestedlab-kerberos >>>"
 END = "# <<< nestedlab-kerberos <<<"
 with open("/etc/hosts") as f:
     lines = f.read().splitlines()
+managed_names = {fqdn for _, fqdn, _ in entries} | {short for _, _, short in entries}
 out, skip = [], False
 for ln in lines:
     if ln.strip() == BEGIN:
@@ -76,7 +77,10 @@ for ln in lines:
     if ln.strip() == END:
         skip = False
         continue
-    if not skip:
+    # Remove legacy unmanaged entries for these names as well. Otherwise libc can
+    # return the old private 10.10 address before the managed NAT-uplink entry.
+    fields = ln.split()
+    if not skip and not any(name in managed_names for name in fields[1:]):
         out.append(ln)
 block = [BEGIN] + ["%s\t%s %s" % (ip, fqdn, short) for ip, fqdn, short in entries] + [END]
 with open("/etc/hosts", "w") as f:

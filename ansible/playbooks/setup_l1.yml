@@ -31,10 +31,8 @@
       ansible.windows.win_reboot:
         reboot_timeout: 600
 
-    - name: L1 内に仮想スイッチ (LabNAT) を冪等作成 (ルーテッド / NATなし)
-      # LabNAT は L1 内の Internal スイッチ + L1 をゲートウェイにしたルーテッドな L2 ネット。
-      # 制御 VM は L1 ルータ経由でここへ到達する。NetNat を張ると戻りトラフィックを SNAT して
-      # ルーティングを壊す (制御→L2 がタイムアウト) ため NAT は使わず、既存があれば除去する。
+    - name: L1 内に仮想スイッチと第1段NATを冪等作成
+      # L2 internet path: 10.10/24 --(this NetNat)--> 10.20/24 --(L0 NetNat)--> internet.
       vars:
         sw: "{{ l1.nat.switch }}"
         subnet: "{{ l1.nat.subnet }}"
@@ -51,15 +49,71 @@
           if (-not (Get-NetIPAddress -InterfaceAlias $alias -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object IPAddress -eq $HostIp)) {
             New-NetIPAddress -InterfaceAlias $alias -IPAddress $HostIp -PrefixLength $prefix | Out-Null; $Ansible.Changed = $true
           }
-          # NAT があるとルーティングを壊すので除去 (冪等収束)。
-          if (Get-NetNat -Name "$Sw-NAT" -ErrorAction SilentlyContinue) {
-            Remove-NetNat -Name "$Sw-NAT" -Confirm:$false; $Ansible.Changed = $true
+          $natName = "$Sw-NAT"
+          $nat = Get-NetNat -Name $natName -ErrorAction SilentlyContinue
+          if ($nat -and $nat.InternalIPInterfaceAddressPrefix -ne $Subnet) {
+            Remove-NetNat -Name $natName -Confirm:$false
+            $nat = $null
+            $Ansible.Changed = $true
+          }
+          if (-not $nat) {
+            New-NetNat -Name $natName -InternalIPInterfaceAddressPrefix $Subnet | Out-Null
+            $Ansible.Changed = $true
           }
         parameters:
           Sw: "{{ sw }}"
           HostIp: "{{ host_ip }}"
           Subnet: "{{ subnet }}"
       register: l1net
+
+    - name: L2 管理ポートをL1 NAT外側へ冪等公開
+      vars:
+        vm: "{{ hostvars[item] }}"
+      ansible.windows.win_powershell:
+        script: |
+          param($NatName,$ExternalPort,$InternalIp,$InternalPort)
+          $Ansible.Changed = $false
+          $existing = Get-NetNatStaticMapping -NatName $NatName -ErrorAction SilentlyContinue |
+            Where-Object { $_.Protocol -eq 6 -and $_.ExternalPort -eq $ExternalPort }
+          $correct = $existing | Where-Object {
+            $_.InternalIPAddress -eq $InternalIp -and $_.InternalPort -eq $InternalPort
+          }
+          if (-not $correct) {
+            $existing | Remove-NetNatStaticMapping -Confirm:$false
+            Add-NetNatStaticMapping -NatName $NatName -Protocol TCP -ExternalIPAddress '0.0.0.0' `
+              -ExternalPort $ExternalPort -InternalIPAddress $InternalIp -InternalPort $InternalPort | Out-Null
+            $Ansible.Changed = $true
+          }
+        parameters:
+          NatName: "{{ l1.nat.switch }}-NAT"
+          ExternalPort: "{{ vm.management.external_port }}"
+          InternalIp: "{{ vm.nics[0].ip }}"
+          InternalPort: "{{ vm.management.internal_port }}"
+      loop: "{{ groups['l2_windows'] + groups['l2_linux'] }}"
+      loop_control:
+        label: "{{ item }}:{{ hostvars[item].management.external_port }}"
+
+    - name: Kerberos KDCをL1 NAT外側へ冪等公開
+      when: groups['domain_controllers'] | length > 0
+      ansible.windows.win_powershell:
+        script: |
+          param($NatName,$Protocol,$InternalIp)
+          $Ansible.Changed = $false
+          $protocolNumber = if ($Protocol -eq 'TCP') { 6 } else { 17 }
+          $existing = Get-NetNatStaticMapping -NatName $NatName -ErrorAction SilentlyContinue |
+            Where-Object { $_.Protocol -eq $protocolNumber -and $_.ExternalPort -eq 88 }
+          $correct = $existing | Where-Object { $_.InternalIPAddress -eq $InternalIp -and $_.InternalPort -eq 88 }
+          if (-not $correct) {
+            $existing | Remove-NetNatStaticMapping -Confirm:$false
+            Add-NetNatStaticMapping -NatName $NatName -Protocol $Protocol -ExternalIPAddress '0.0.0.0' `
+              -ExternalPort 88 -InternalIPAddress $InternalIp -InternalPort 88 | Out-Null
+            $Ansible.Changed = $true
+          }
+        parameters:
+          NatName: "{{ l1.nat.switch }}-NAT"
+          Protocol: "{{ item }}"
+          InternalIp: "{{ hostvars[groups['domain_controllers'][0]].nics[0].ip }}"
+      loop: [TCP, UDP]
 
     - name: L1 をルータ化 (CtrlNAT <-> LabNAT の IP 転送を有効化)
       # 制御 VM (CtrlNAT) から L2 (LabNAT) へ到達できるよう L1 をルータにする。

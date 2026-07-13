@@ -99,10 +99,15 @@ def main():
         grp = "l2_linux" if any(k in os_name for k in ("ubuntu", "debian", "linux", "rocky", "alma")) else "l2_windows"
         inv[grp]["hosts"].append(name)
         hv = dict(vm)
-        # L2 は LabNAT 上。制御 VM は L1 ルータ経由で各 L2 の宣言 IP へ到達する。
+        # L2 is behind the L1 NetNat. setup_l1 publishes a deterministic management
+        # port for each VM on the L1 uplink so the control VM can reach WinRM/SSH.
         nics = vm.get("nics") or []
         if nics and nics[0].get("ip"):
             hv["ansible_host"] = nics[0]["ip"]
+        management = vm.get("management") or {}
+        if management.get("external_port"):
+            hv["ansible_host"] = model["l1"].get("management_ip", "10.20.0.20")
+            hv["ansible_port"] = management["external_port"]
         if vm.get("provision", {}).get("forest"):
             inv["domain_controllers"]["hosts"].append(name)
         if name in cluster_members:
