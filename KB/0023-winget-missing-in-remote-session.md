@@ -42,11 +42,10 @@ not a workaround; it fails with access denied.
 
 ## Fix
 
-1. Register App Installer for the current remote user with Microsoft's documented
-   `Add-AppxPackage -RegisterByFamilyName` command.
-2. Run `winget source update --name winget`.
-3. Register the downloaded `Microsoft.Winget.Source` manifest in the current package graph.
-4. End that remote PowerShell process, then run the normal latest-release command in a new process:
+1. Install the `Microsoft.WinGet.Client` module from PSGallery in machine scope.
+2. Run `Repair-WinGetPackageManager -AllUsers`. Microsoft documents this sequence for
+   bootstrapping the stable client where a usable WinGet registration is absent.
+3. Run the normal latest-release command:
 
 ```powershell
 winget install --id Microsoft.PowerShell --source winget
@@ -55,13 +54,25 @@ winget install --id Microsoft.PowerShell --source winget
 Automation adds silent, agreement, and non-interactive flags. The `windows_baseline` Ansible role
 skips all WinGet work when `pwsh.exe` is already present.
 
+The automation also specifies `--installer-type wix --scope machine`. Current WinGet versions
+prefer MSIX when both MSIX and WiX installers are available. PowerShell's MSIX can fail in a
+non-interactive WinRM session with `0x80073d19` (the user was logged off), even after package
+discovery and hash validation succeed. Selecting WiX still installs the same latest release, but
+uses PowerShell's x64 MSI in machine scope.
+
+Merely registering App Installer and `Microsoft.Winget.Source`, or resetting the WinRM connection
+afterward, is insufficient on a guest that has never had an interactive logon; the source can
+still fail with `0x8a15000f`.
+
 ## Lessons
 
 - Staged AppX/MSIX packages and per-user registration are different states.
 - Do not weaken ACLs on `C:\Program Files\WindowsApps` or execute another user's alias.
-- Verify both the WinGet CLI alias and the source extension when automating through WinRM.
-- AppX registration does not refresh the package graph already captured by the current PowerShell
-  process. Separate registration and package installation into different remote tasks.
+- WinGet normally depends on first interactive logon for per-user registration. Unattended server
+  automation must establish the stable client independently of that logon.
+- A new WinRM process alone does not repair a missing source registration.
+- For unattended system baselines, select the WiX installer in machine scope; a remote network
+  logon is not a durable interactive user session for MSIX deployment.
 - Keep the package command simple when the requirement is the latest stable release.
 
 ## Related
