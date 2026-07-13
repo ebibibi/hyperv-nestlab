@@ -1,7 +1,7 @@
 ---
 # Common baseline for every Windows system managed by the lab.
-# WinGet is user-registered even when App Installer is staged for all users, so remote
-# management sessions may need to register both the CLI alias and its source extension first.
+# WinGet is normally user-registered after the first interactive logon. Fresh Server guests
+# have no such logon, so bootstrap the supported stable client for all users first.
 
 - name: "Prepare WinGet for the current remote user"
   ansible.windows.win_powershell:
@@ -21,36 +21,16 @@
         return
       }
 
-      # Windows Server 2025 stages App Installer for all users, but a WinRM user may not yet
-      # have the winget App Execution Alias registered. This is Microsoft's documented command.
-      $winget = Get-Command winget.exe -ErrorAction SilentlyContinue
-      if (-not $winget) {
-        Add-AppxPackage -RegisterByFamilyName `
-          -MainPackage Microsoft.DesktopAppInstaller_8wekyb3d8bbwe
-        $winget = Get-Command winget.exe -ErrorAction SilentlyContinue
-      }
-      if (-not $winget) {
-        throw 'WinGet registration completed, but winget.exe is still unavailable.'
-      }
+      # Microsoft documents this sequence for bootstrapping the stable WinGet client in an
+      # environment without a usable registration. AllUsers avoids an interactive-logon
+      # prerequisite and keeps the baseline suitable for unattended Server guests.
+      $ProgressPreference = 'SilentlyContinue'
+      Install-PackageProvider -Name NuGet -Force | Out-Null
+      Install-Module -Name Microsoft.WinGet.Client -Force -Repository PSGallery `
+        -Scope AllUsers | Out-Null
+      Import-Module Microsoft.WinGet.Client -Force
+      Repair-WinGetPackageManager -AllUsers
 
-      # The pre-indexed community source is another MSIX extension. A freshly registered
-      # remote user can download it successfully yet fail with 0x8a15000f until its manifest
-      # is explicitly registered in the current package graph.
-      & $winget.Source source update --name winget --disable-interactivity | Out-Null
-      if ($LASTEXITCODE -ne 0) {
-        & $winget.Source source reset --force --disable-interactivity | Out-Null
-        & $winget.Source source update --name winget --disable-interactivity | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw "winget source update failed: $LASTEXITCODE" }
-      }
-      $sourcePackage = Get-AppxPackage -AllUsers -Name Microsoft.Winget.Source |
-        Sort-Object Version -Descending | Select-Object -First 1
-      if ($sourcePackage) {
-        Add-AppxPackage -Register (Join-Path $sourcePackage.InstallLocation 'AppxManifest.xml') `
-          -DisableDevelopmentMode
-      }
-
-      # End this module invocation after registration. The package graph is captured when the
-      # PowerShell process starts; WinGet must run in the next Ansible task (a fresh process).
       $Ansible.Result = @{ needs_install = $true }
   register: powershell_prepare
 
@@ -61,12 +41,23 @@
     script: |
       $ErrorActionPreference = 'Stop'
       $Ansible.Changed = $false
-      $winget = Get-Command winget.exe -ErrorAction Stop
+      $winget = Get-Command winget.exe -ErrorAction SilentlyContinue
+      if (-not $winget) {
+        $appInstaller = Get-AppxPackage Microsoft.DesktopAppInstaller
+        if ($appInstaller) {
+          $candidate = Join-Path $appInstaller.InstallLocation 'winget.exe'
+          if (Test-Path $candidate) { $winget = Get-Item $candidate }
+        }
+      }
+      if (-not $winget) {
+        throw 'WinGet is unavailable after Repair-WinGetPackageManager.'
+      }
       $machinePwsh = 'C:\Program Files\PowerShell\7\pwsh.exe'
       $userPwsh = Join-Path $env:LOCALAPPDATA 'Microsoft\WindowsApps\pwsh.exe'
       # Install the current stable release, as recommended by the PowerShell documentation.
       & $winget.Source install --id Microsoft.PowerShell --source winget `
-        --silent --accept-source-agreements --accept-package-agreements --disable-interactivity
+        --installer-type wix --scope machine --silent `
+        --accept-source-agreements --accept-package-agreements --disable-interactivity
       if ($LASTEXITCODE -ne 0) { throw "winget install Microsoft.PowerShell failed: $LASTEXITCODE" }
 
       $installedPwsh = @($machinePwsh, $userPwsh) | Where-Object { Test-Path $_ } | Select-Object -First 1

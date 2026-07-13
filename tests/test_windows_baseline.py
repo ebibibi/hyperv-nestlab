@@ -19,17 +19,18 @@ def test_powershell_is_installed_with_latest_winget_package():
         encoding="utf-8"
     )
     assert "install --id Microsoft.PowerShell --source winget" in tasks
+    assert "--installer-type wix" in tasks
+    assert "--scope machine" in tasks
     assert "--accept-source-agreements --accept-package-agreements" in tasks
     install_line = next(
         line for line in tasks.splitlines() if "install --id Microsoft.PowerShell" in line
     )
     assert "--version" not in install_line
     assert "Get-Command winget.exe" in tasks
-    assert "Add-AppxPackage -RegisterByFamilyName" in tasks
-    assert "Microsoft.Winget.Source" in tasks
+    assert "Install-Module -Name Microsoft.WinGet.Client" in tasks
+    assert "Repair-WinGetPackageManager -AllUsers" in tasks
     assert "Prepare WinGet for the current remote user" in tasks
     assert "when: powershell_prepare.result.needs_install | bool" in tasks
-    assert "WinGet must run in the next Ansible task" in tasks
     assert "$Ansible.Changed = $false" in tasks
 
 
