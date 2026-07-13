@@ -115,11 +115,47 @@ Log "SSH 疎通待ち (最大 ${TimeoutSec}s, $ip)..."
 $knownHosts = Join-Path $env:TEMP 'nl_known'
 if (Test-Path $knownHosts) { Remove-Item $knownHosts -Force -ErrorAction SilentlyContinue }
 $sw = [System.Diagnostics.Stopwatch]::StartNew()
-$sshOpts = @("-i", $key, "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=$env:TEMP\nl_known", "-o", "ConnectTimeout=5")
+$sshOpts = @(
+    "-i", $key,
+    "-o", "StrictHostKeyChecking=no",
+    "-o", "UserKnownHostsFile=$env:TEMP\nl_known",
+    "-o", "ConnectTimeout=5",
+    "-o", "BatchMode=yes",
+    "-o", "ServerAliveInterval=5",
+    "-o", "ServerAliveCountMax=3"
+)
+
+# ConnectTimeout only covers connection establishment. On Windows OpenSSH an ssh.exe process
+# can remain alive after the remote command has completed, which would freeze this loop before
+# the outer stopwatch gets another chance to evaluate TimeoutSec. Give every individual probe a
+# hard 15-second process deadline and kill its process tree when exceeded (KB/0020).
+function Invoke-SshReadinessProbe {
+    $psi = [System.Diagnostics.ProcessStartInfo]::new()
+    $psi.FileName = "ssh"
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    foreach ($arg in $sshOpts) { [void]$psi.ArgumentList.Add($arg) }
+    [void]$psi.ArgumentList.Add("labadmin@$ip")
+    [void]$psi.ArgumentList.Add("test -f /home/labadmin/ansible-ready.txt && cat /home/labadmin/ansible-ready.txt")
+
+    $process = [System.Diagnostics.Process]::new()
+    $process.StartInfo = $psi
+    [void]$process.Start()
+    if (-not $process.WaitForExit(15000)) {
+        $process.Kill($true)
+        $process.WaitForExit()
+        return [pscustomobject]@{ ExitCode = 124; Output = $null }
+    }
+    $output = $process.StandardOutput.ReadToEnd().Trim()
+    return [pscustomobject]@{ ExitCode = $process.ExitCode; Output = $output }
+}
+
 $ready = $false
 while ($sw.Elapsed.TotalSeconds -lt $TimeoutSec) {
-    $out = & ssh @sshOpts "labadmin@$ip" "test -f /home/labadmin/ansible-ready.txt && cat /home/labadmin/ansible-ready.txt" 2>$null
-    if ($LASTEXITCODE -eq 0 -and $out) { $ready = $true; break }
+    $probe = Invoke-SshReadinessProbe
+    $out = $probe.Output
+    if ($probe.ExitCode -eq 0 -and $out) { $ready = $true; break }
     Start-Sleep -Seconds 10
 }
 if (-not $ready) { throw "制御ノードの準備がタイムアウトしました (cloud-init/ansible 未完了の可能性)。" }
