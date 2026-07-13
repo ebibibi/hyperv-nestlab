@@ -15,3 +15,7 @@ def test_readiness_probe_has_noninteractive_keepalive_limits():
     assert '"ServerAliveCountMax=3"' in script
     assert ".WaitForExit(15000)" in script
     assert ".Kill($true)" in script
+    assert "$psi.RedirectStandardOutput = $false" in script
+    assert "$psi.RedirectStandardError = $false" in script
+    assert ".StandardOutput.ReadToEnd()" not in script
+    assert '"test -s /home/labadmin/ansible-ready.txt"' in script
