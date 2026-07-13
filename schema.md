@@ -35,7 +35,18 @@
 ```
 L1.l2_defaults  <  L2.defaults  <  group（グループ直下の設定）  <  overrides（VM個別）
 ```
-- 継承対象フィールド: `cpu` / `memory_gb` / `os` / `generation` / `domain_join` / `disk_gb` / **`language`**。
+- 継承対象フィールド: `cpu` / `memory_gb` / `os` / `generation` / `domain_join` / `disk_gb` / **`language`** / `features` / `applications`。
+
+### L2アプリケーションの宣言
+
+Windows L2の `applications` には、現在 `claude_code` と `microsoft_word` を指定できる。AD参加とWinRM/Kerberos接続の確立後、`configure_l2.yml` が対象ホストだけへ冪等適用する。
+
+```yaml
+applications: [claude_code, microsoft_word]
+```
+
+- `claude_code`: Anthropic公式Windows native installerのstable channel。ドメイン管理者プロファイルに導入する。
+- `microsoft_word`: Microsoft公式Office Deployment ToolでMicrosoft 365 Apps版Wordのみを導入する。ライセンス認証は利用者のサインイン後に行う。
 - `language`（ゲスト言語）: 例 `en-us` / `ja-jp`。未指定は `en-us`。
   - **Windows**: その言語の ISO を自動取得し言語別 golden (`win2025-golden-<lang>.vhdx`) を生成。
   - **Linux**: 単一 cloud image + cloud-init で `locale`（例 `ja_JP.UTF-8`）を設定。

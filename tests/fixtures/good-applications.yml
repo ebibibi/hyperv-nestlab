@@ -1,0 +1,19 @@
+defaults:
+  cpu: 4
+  memory_gb: 8
+  os: windows_server_2025
+  domain_join: corp.contoso.local
+
+domain:
+  fqdn: corp.contoso.local
+  netbios: CORP
+  controllers:
+    - { name: dc01, ip: 10.10.0.10 }
+
+groups:
+  - name: admin-workstations
+    name_prefix: admin
+    count: 1
+    ip_from: 10.10.0.30
+    disk_gb: 120
+    applications: [claude_code, microsoft_word]

@@ -7,6 +7,8 @@
 # 例: l2/*.yml の defaults / group / vm に
 #   features: [Web-Server, Web-Mgmt-Console, Web-Windows-Auth]
 # と書けば、その L2 に IIS 一式が入る。
+#   applications: [claude_code, microsoft_word]
+# と書けば、対応するアプリを存在確認付きで冪等導入する。
 
 - name: "L2 機能の導入: {{ (features | default([])) | join(', ') }}"
   when: (features | default([])) | length > 0
@@ -20,3 +22,131 @@
   when: (l2_feat is defined) and (l2_feat.reboot_required | default(false))
   ansible.windows.win_reboot:
     reboot_timeout: 1200
+
+- name: "Claude Code stable を現在のドメイン管理者プロファイルへ導入"
+  when: "'claude_code' in (applications | default([]))"
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = 'Stop'
+      $claudeDir = Join-Path $env:USERPROFILE '.local\bin'
+      $claudeExe = Join-Path $claudeDir 'claude.exe'
+
+      if (Test-Path $claudeExe) {
+          $Ansible.Changed = $false
+          $Ansible.Result = (& $claudeExe --version | Out-String).Trim()
+          return
+      }
+
+      [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+      $installer = Invoke-RestMethod -Uri 'https://claude.ai/install.ps1'
+      & ([ScriptBlock]::Create($installer)) stable
+
+      if (-not (Test-Path $claudeExe)) {
+          throw "Claude Code installer completed but $claudeExe was not created"
+      }
+      $signature = Get-AuthenticodeSignature $claudeExe
+      if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'Anthropic') {
+          throw "Claude Code signature validation failed: $($signature.Status) / $($signature.SignerCertificate.Subject)"
+      }
+
+      $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+      if (($userPath -split ';') -notcontains $claudeDir) {
+          $newUserPath = if ([string]::IsNullOrWhiteSpace($userPath)) {
+              $claudeDir
+          } else {
+              ($userPath.TrimEnd(';') + ';' + $claudeDir)
+          }
+          [Environment]::SetEnvironmentVariable('Path', $newUserPath, 'User')
+      }
+
+      $Ansible.Changed = $true
+      $Ansible.Result = (& $claudeExe --version | Out-String).Trim()
+  register: claude_code_install
+
+- name: "Claude Code バージョン"
+  when:
+    - "'claude_code' in (applications | default([]))"
+    - claude_code_install.result is defined
+  ansible.builtin.debug:
+    var: claude_code_install.result
+
+- name: "Microsoft 365 Apps版WordをODTで導入"
+  when: "'microsoft_word' in (applications | default([]))"
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = 'Stop'
+      $wordExe = 'C:\Program Files\Microsoft Office\root\Office16\WINWORD.EXE'
+      if (Test-Path $wordExe) {
+          $Ansible.Changed = $false
+          $Ansible.Result = (Get-Item $wordExe).VersionInfo.ProductVersion
+          return
+      }
+
+      $root = 'C:\ProgramData\hyperv-nestlab\office'
+      $extract = Join-Path $root 'odt'
+      $odt = Join-Path $root 'officedeploymenttool_20026-20112.exe'
+      $config = Join-Path $root 'word-only.xml'
+      New-Item -ItemType Directory -Path $root,$extract -Force | Out-Null
+
+      $odtUrl = 'https://download.microsoft.com/download/6c1eeb25-cf8b-41d9-8d0d-cc1dbc032140/officedeploymenttool_20026-20112.exe'
+      $odtSha256 = '6e8801769de4495362664451bdd59fc6822af543e9dd07b3b624d3f9bad6464d'
+      if (-not (Test-Path $odt) -or (Get-FileHash $odt -Algorithm SHA256).Hash.ToLowerInvariant() -ne $odtSha256) {
+          Invoke-WebRequest -Uri $odtUrl -OutFile $odt -UseBasicParsing
+      }
+      $actualHash = (Get-FileHash $odt -Algorithm SHA256).Hash.ToLowerInvariant()
+      if ($actualHash -ne $odtSha256) {
+          throw "Office Deployment Tool hash mismatch: $actualHash"
+      }
+
+      $xml = @'
+      <Configuration>
+        <Add OfficeClientEdition="64" Channel="MonthlyEnterprise">
+          <Product ID="O365ProPlusRetail">
+            <Language ID="ja-jp" />
+            <Language ID="en-us" />
+            <ExcludeApp ID="Access" />
+            <ExcludeApp ID="Excel" />
+            <ExcludeApp ID="Groove" />
+            <ExcludeApp ID="Lync" />
+            <ExcludeApp ID="OneDrive" />
+            <ExcludeApp ID="OneNote" />
+            <ExcludeApp ID="Outlook" />
+            <ExcludeApp ID="PowerPoint" />
+            <ExcludeApp ID="Publisher" />
+            <ExcludeApp ID="Teams" />
+          </Product>
+        </Add>
+        <Property Name="FORCEAPPSHUTDOWN" Value="FALSE" />
+        <Updates Enabled="TRUE" Channel="MonthlyEnterprise" />
+        <RemoveMSI />
+        <Display Level="None" AcceptEULA="TRUE" />
+      </Configuration>
+      '@
+      Set-Content -Path $config -Value $xml -Encoding UTF8
+
+      $setup = Join-Path $extract 'setup.exe'
+      if (-not (Test-Path $setup)) {
+          $p = Start-Process -FilePath $odt -ArgumentList "/quiet /extract:$extract" -Wait -PassThru
+          if ($p.ExitCode -ne 0 -or -not (Test-Path $setup)) {
+              throw "Office Deployment Tool extraction failed with exit code $($p.ExitCode)"
+          }
+      }
+
+      $install = Start-Process -FilePath $setup -ArgumentList "/configure `"$config`"" -Wait -PassThru
+      if ($install.ExitCode -ne 0) {
+          throw "Office Deployment Tool failed with exit code $($install.ExitCode)"
+      }
+      if (-not (Test-Path $wordExe)) {
+          throw 'Word installation completed but WINWORD.EXE was not found'
+      }
+
+      $Ansible.Changed = $true
+      $Ansible.Result = (Get-Item $wordExe).VersionInfo.ProductVersion
+  register: microsoft_word_install
+
+- name: "Microsoft Word バージョン"
+  when:
+    - "'microsoft_word' in (applications | default([]))"
+    - microsoft_word_install.result is defined
+  ansible.builtin.debug:
+    var: microsoft_word_install.result

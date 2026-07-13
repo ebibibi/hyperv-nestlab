@@ -24,3 +24,14 @@ groups:
     ip_from: 10.10.0.21
     # メンバーサーバーに IIS 一式を宣言で導入（Ansible win_feature）。
     features: [Web-Server, Web-Mgmt-Console, Web-Windows-Auth, Web-Asp-Net45]
+
+  # @IT「AI検証ラボ」の調査・撮影用管理端末。
+  # 既存 dc01/mem01 と分離し、ドメイン参加端末から利用者視点と管理者視点の両方を検証する。
+  - name: admin-workstations
+    name_prefix: admin
+    count: 1
+    ip_from: 10.10.0.30
+    cpu: 4
+    memory_gb: 8
+    disk_gb: 120
+    applications: [claude_code, microsoft_word]
