@@ -46,7 +46,7 @@ not a workaround; it fails with access denied.
    `Add-AppxPackage -RegisterByFamilyName` command.
 2. Run `winget source update --name winget`.
 3. Register the downloaded `Microsoft.Winget.Source` manifest in the current package graph.
-4. Run the normal latest-release command:
+4. End that remote PowerShell process, then run the normal latest-release command in a new process:
 
 ```powershell
 winget install --id Microsoft.PowerShell --source winget
@@ -60,6 +60,8 @@ skips all WinGet work when `pwsh.exe` is already present.
 - Staged AppX/MSIX packages and per-user registration are different states.
 - Do not weaken ACLs on `C:\Program Files\WindowsApps` or execute another user's alias.
 - Verify both the WinGet CLI alias and the source extension when automating through WinRM.
+- AppX registration does not refresh the package graph already captured by the current PowerShell
+  process. Separate registration and package installation into different remote tasks.
 - Keep the package command simple when the requirement is the latest stable release.
 
 ## Related

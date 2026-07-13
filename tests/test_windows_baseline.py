@@ -27,6 +27,9 @@ def test_powershell_is_installed_with_latest_winget_package():
     assert "Get-Command winget.exe" in tasks
     assert "Add-AppxPackage -RegisterByFamilyName" in tasks
     assert "Microsoft.Winget.Source" in tasks
+    assert "Prepare WinGet for the current remote user" in tasks
+    assert "when: powershell_prepare.result.needs_install | bool" in tasks
+    assert "WinGet must run in the next Ansible task" in tasks
     assert "$Ansible.Changed = $false" in tasks
 
 
