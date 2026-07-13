@@ -15,6 +15,12 @@
         "fqdn": { "type": "string", "pattern": "^[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$" },
         "netbios": { "type": "string", "maxLength": 15 },
         "dsrm_password": { "type": "string" },
+        "dns_forwarders": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/ipv4" }
+        },
         "controllers": {
           "type": "array",
           "minItems": 1,

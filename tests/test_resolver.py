@@ -79,6 +79,11 @@ def test_applications_are_inherited_by_admin_vm():
     assert admin01["applications"] == ["claude_code", "microsoft_word"]
 
 
+def test_ad_forest_declares_external_dns_forwarders():
+    m = build(REPO / "l2" / "ad-forest.yml")
+    assert m["domain"]["dns_forwarders"] == ["1.1.1.1", "8.8.8.8"]
+
+
 # ---------------- 異常系 ----------------
 
 def test_duplicate_ip_detected():
