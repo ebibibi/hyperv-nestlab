@@ -356,6 +356,16 @@ Write-Step "L1 にラボストア(L:)を増設・初期化 (golden/L2 の置き�
 if ($LASTEXITCODE -ne 0) { Fail "L1 ラボストアの構成に失敗しました。" }
 Write-Ok "ラボストア準備完了"
 
+# ---------------------------------------------------------------- 4f2. Linux ベースイメージの拡張
+# cloud image は仮想 3.5GB しかない。L2 Linux は差分ディスクで作られ、差分の容量は親で決まる
+# (差分単体は Resize-VHD できない) ため、配送前に親を宣言サイズへ広げておく。
+if ($model.vms | Where-Object { $_.os -match 'ubuntu|debian|linux' }) {
+    Write-Step "Linux ベースイメージを宣言サイズへ拡張 (差分ディスクの親)"
+    & (Join-Path $RepoRoot "scripts\Expand-LinuxBaseImage.ps1") -ModelPath $Resolved
+    if ($LASTEXITCODE -ne 0) { Fail "Linux ベースイメージの拡張に失敗しました。" }
+    Write-Ok "Linux ベースイメージ確認完了"
+}
+
 # ---------------------------------------------------------------- 4g. golden を L1 へ配送
 Write-Step "ベースイメージ(言語別 golden / Ubuntu)を L1 (L:\images) へ配送 (PowerShell Direct)"
 # L2 が実際に使う言語の golden + (Linux L2 があれば)Ubuntu を配送。L1 用 en-us は L1 OS に使うため不要。
