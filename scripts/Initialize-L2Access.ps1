@@ -47,7 +47,10 @@ foreach ($vm in $winVms) {
         Name = $vm.name
         Ip   = $vm.nics[0].ip
         Gw   = $vm.nics[0].gw
-        Dns  = if ($vm.nics[0].dns) { $vm.nics[0].dns } else { $vm.nics[0].gw }
+        # DNS は確定モデルが必ず持つ (resolver: 宣言 > DC > 既定)。配列で来るので配列のまま渡す。
+        # ゲートウェイ (L1) は DNS サーバーではないため、フォールバック先にしない
+        # (ドメイン無し構成で名前解決できず、パッケージ取得や Azure Arc 登録が失敗する)。
+        Dns  = @($vm.nics[0].dns) | Where-Object { $_ }
     }
 }
 $targetJson = $targets | ConvertTo-Json -Compress -Depth 5

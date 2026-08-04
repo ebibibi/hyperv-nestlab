@@ -47,6 +47,23 @@ applications: [claude_code, microsoft_word]
 
 - `claude_code`: Anthropic公式Windows native installerのstable channel。ドメイン管理者プロファイルに導入する。
 - `microsoft_word`: Microsoft公式Office Deployment ToolでMicrosoft 365 Apps版Wordのみを導入する。ライセンス認証は利用者のサインイン後に行う。
+### DNS（`dns`）
+
+L2 が使う DNS サーバー。`defaults` / `group` / VM / `overrides` のどこでも書ける（継承対象）。
+単一値でもリストでも書けて、確定モデルでは**常にリスト**へ正規化される。
+
+```yaml
+defaults:
+  dns: 10.10.0.99
+groups:
+  - name: web
+    dns: [10.10.0.98, 1.1.1.1]
+```
+
+解決順は **宣言 > ドメイン参加時の最初の DC > 既定 (`1.1.1.1` / `8.8.8.8`)**。
+ゲートウェイ（L1）は DNS サーバーではないため、フォールバック先にはしない（詳細は
+[`KB/0025`](KB/0025-domainless-l2-has-no-dns.md)）。
+
 ### Azure Arc への登録
 
 L2 を **Azure Arc-enabled servers** として Azure に登録できる。接続先は L2 宣言のトップレベル

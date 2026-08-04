@@ -44,3 +44,4 @@ Windows golden / S2D まわりの**汎用ノウハウ集**でもあります。
 | [0022](0022-l1-os-disk-declaration-not-applied.md) | L1 OS disk declaration was ignored for cloned golden images | Reconcile VHDX size and extend C: through PowerShell Direct |
 | [0023](0023-winget-missing-in-remote-session.md) | WinGet is missing or its source fails in remote Windows sessions | Register App Installer and the source MSIX in the current user package graph |
 | [0024](0024-additional-domain-controller.md) | 追加ドメインコントローラーを足す（複製検証ができない） | 実装は先頭DCのみ昇格。追加DCは動的メモリで作る（固定は0x8007000E）。昇格後ADWS停止はKB/0007が2台目でも再発 |
+| [0025](0025-domainless-l2-has-no-dns.md) | ドメイン無し構成の L2 は DNS を持たない（名前解決が全滅） | 既定はモデル側に1つ。ゲートウェイを DNS 代わりにしない |
