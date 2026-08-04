@@ -114,3 +114,67 @@ def test_schema_rejects_unknown_application(tmp_path):
     )
     with pytest.raises(resolve.ConfigError, match="スキーマ検証エラー"):
         build(bad)
+
+
+# ---------------- Azure Arc ----------------
+
+def test_arc_demo_marks_both_guests_for_onboarding():
+    """arc-demo.yml は Windows/Linux 双方を Arc 参加として展開する。"""
+    m = build(REPO / "l2" / "arc-demo.yml")
+    arc = {v["name"]: v["arc"] for v in m["vms"]}
+    assert arc == {"arcwin01": True, "arclnx01": True}
+
+
+def test_arc_connection_target_is_resolved_with_agent_defaults():
+    """接続先はモデルに載り、エージェント配布 URL は既定で補完される。"""
+    m = build(REPO / "l2" / "arc-demo.yml")
+    assert m["azure_arc"]["resource_group"] == "rg-hccjp76-arc"
+    assert m["azure_arc"]["location"] == "japaneast"
+    assert m["azure_arc"]["agent"]["windows_msi_url"].startswith("https://")
+    assert m["azure_arc"]["agent"]["linux_install_script_url"].startswith("https://")
+
+
+def test_arc_defaults_to_false_when_not_declared():
+    """arc を書かない従来の宣言は、全 VM が非参加のままで azure_arc も無い。"""
+    m = build(REPO / "l2" / "minimal-windows.yml")
+    assert all(v["arc"] is False for v in m["vms"])
+    assert m["azure_arc"] is None
+
+
+def test_arc_flag_is_inheritable_and_overridable():
+    """defaults の arc はグループ/VM 個別で上書きできる。"""
+    l1 = resolve.load_yaml(L1)
+    l2 = {
+        "azure_arc": {"resource_group": "rg-x", "location": "japaneast"},
+        "defaults": {"os": "windows_server_2025", "arc": True},
+        "groups": [
+            {"name": "a", "count": 2, "ip_from": "10.10.0.51",
+             "overrides": {"a02": {"arc": False}}},
+        ],
+    }
+    resolve.validate_schema(l2, "l2.schema.json", "L2")
+    m = resolve.resolve(l1, l2)
+    assert {v["name"]: v["arc"] for v in m["vms"]} == {"a01": True, "a02": False}
+
+
+def test_arc_without_connection_target_is_rejected():
+    """arc: true があるのに azure_arc が無い宣言は意味検証で弾く。"""
+    l1 = resolve.load_yaml(L1)
+    l2 = {
+        "defaults": {"os": "windows_server_2025", "arc": True},
+        "groups": [{"name": "a", "count": 1, "ip_from": "10.10.0.51"}],
+    }
+    with pytest.raises(resolve.ConfigError, match="azure_arc"):
+        resolve.resolve(l1, l2)
+
+
+def test_arc_target_without_participants_is_rejected():
+    """接続先だけ書いて参加 VM がゼロの宣言も弾く (書き忘れの検知)。"""
+    l1 = resolve.load_yaml(L1)
+    l2 = {
+        "azure_arc": {"resource_group": "rg-x", "location": "japaneast"},
+        "defaults": {"os": "windows_server_2025"},
+        "groups": [{"name": "a", "count": 1, "ip_from": "10.10.0.51"}],
+    }
+    with pytest.raises(resolve.ConfigError, match="arc: true"):
+        resolve.resolve(l1, l2)

@@ -1,0 +1,37 @@
+---
+# L2 ゲストを Azure Arc (Arc-enabled servers) へ冪等にオンボードする。
+# 対象は宣言で arc: true を書いた L2 のみ (configure_arc.yml が条件を絞る)。
+#
+# 接続先 (subscription / resource group / location / tags) は L2 宣言の azure_arc から、
+# 資格情報 (サービスプリンシパル) は環境変数経由の inventory 変数から受け取る。
+# 宣言にもリポジトリにもシークレットを書かないための分離 (schema.md「シークレットの扱い」)。
+#
+# 冪等性: azcmagent の接続状態が Connected かつ同じリソース ID なら何もしない。
+# エージェント未導入なら導入し、未接続なら connect する。
+
+- name: "Arc: 接続先と資格情報が揃っているか検証"
+  ansible.builtin.assert:
+    that:
+      - azure_arc is mapping
+      - (azure_arc.resource_group | default('')) | length > 0
+      - (azure_arc.location | default('')) | length > 0
+      - arc_subscription_id_effective | length > 0
+      - arc_tenant_id_effective | length > 0
+      - (arc_service_principal_id | default('')) | length > 0
+      - (arc_service_principal_secret | default('')) | length > 0
+    fail_msg: >-
+      Azure Arc のオンボード情報が不足しています。L2 宣言の azure_arc (resource_group / location) と、
+      build/arc-cred.json もしくは bootstrap.ps1 の -ArcServicePrincipalId/-ArcServicePrincipalSecret
+      (サブスクリプション ID / テナント ID を含む) を用意してください。
+      scripts/New-ArcOnboarding.ps1 が資格情報の作成まで自動化します。
+  vars:
+    arc_subscription_id_effective: "{{ azure_arc.subscription_id | default(arc_subscription_id, true) | default('', true) }}"
+    arc_tenant_id_effective: "{{ azure_arc.tenant_id | default(arc_tenant_id, true) | default('', true) }}"
+
+- name: "Arc: Windows ゲストをオンボード"
+  when: ansible_connection == 'winrm'
+  ansible.builtin.include_tasks: windows.yml
+
+- name: "Arc: Linux ゲストをオンボード"
+  when: ansible_connection != 'winrm'
+  ansible.builtin.include_tasks: linux.yml

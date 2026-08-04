@@ -44,8 +44,15 @@ DEFAULT_OS_DISK_GB = 80
 # language も継承対象 (L1.l2_defaults < L2.defaults < group < overrides)
 INHERITABLE = (
     "cpu", "memory_gb", "os", "generation", "domain_join", "disk_gb",
-    "language", "features", "applications",
+    "language", "features", "applications", "arc",
 )
+
+# Azure Arc エージェント配布物の既定 URL。版を固定したい場合は L2 宣言の
+# azure_arc.agent.* で差し替える (原則②: 決定性はカタログ/宣言側で担保)。
+ARC_AGENT_DEFAULTS = {
+    "windows_msi_url": "https://aka.ms/AzureConnectedMachineAgent",
+    "linux_install_script_url": "https://aka.ms/azcmagent",
+}
 
 LINUX_RE = re.compile(r"ubuntu|debian|linux|rocky|alma", re.I)
 
@@ -149,6 +156,17 @@ def resolve(l1, l2):
     if domain and domain.get("controllers"):
         dns_default = domain["controllers"][0]["ip"]
 
+    # --- Azure Arc (任意) ---
+    # 接続先 (サブスクリプション/リソースグループ/リージョン) は L2 宣言に 1 か所だけ書く。
+    # 各 VM は arc: true/false で参加を選ぶ。資格情報 (サービスプリンシパル) は宣言に書かず、
+    # 非追跡の build/arc-cred.json か bootstrap の引数で渡す (secrets をリポジトリに置かない)。
+    azure_arc = copy.deepcopy(l2.get("azure_arc")) if l2.get("azure_arc") else None
+    if azure_arc:
+        agent = dict(ARC_AGENT_DEFAULTS)
+        agent.update(azure_arc.get("agent") or {})
+        azure_arc["agent"] = agent
+        azure_arc.setdefault("tags", {})
+
     vms = []
     clusters = []
 
@@ -244,6 +262,7 @@ def resolve(l1, l2):
         vm["language"] = lang
         vm.setdefault("features", [])   # L2 で導入する Windows 機能 (Ansible win_feature)
         vm.setdefault("applications", [])  # L2 で導入するアプリ (Ansible l2_config)
+        vm["arc"] = bool(vm.get("arc", False))  # Azure Arc へオンボードするか (Ansible azure_arc)
         if is_linux_os(vm.get("os")):
             vm["base_image_file"] = ubuntu_basename
             vm["locale"] = linux_locales.get(lang, "en_US.UTF-8")
@@ -310,6 +329,7 @@ def resolve(l1, l2):
             "management_ip": "10.20.0.20",
         },
         "domain": domain,
+        "azure_arc": azure_arc,
         "vms": vms,
         "clusters": clusters,
         "images_needed": images_needed,
@@ -341,6 +361,16 @@ def semantic_checks(model, subnet, gw):
             if ip in seen_ips:
                 errors.append(f"IP が重複しています: {ip} ({seen_ips[ip]} と {name})")
             seen_ips[ip] = name
+
+    # Azure Arc: 参加する VM があるのに接続先が無い (逆に接続先だけあって参加者ゼロ) を弾く。
+    arc_vms = [v.get("name") for v in model["vms"] if v.get("arc")]
+    if arc_vms and not model.get("azure_arc"):
+        errors.append(
+            "arc: true の VM ({}) がありますが、トップレベルの azure_arc (resource_group / location) が"
+            "宣言されていません".format(", ".join(arc_vms))
+        )
+    if model.get("azure_arc") and not arc_vms:
+        errors.append("azure_arc を宣言していますが、arc: true の VM が 1 台もありません")
 
     node_set = set(seen_names)
     for cl in model["clusters"]:

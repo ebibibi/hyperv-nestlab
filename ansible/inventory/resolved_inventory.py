@@ -125,7 +125,18 @@ def main():
         inv["_meta"]["hostvars"][name] = hv
 
     inv["all"] = {"children": ["l0", "l1", "l2_windows", "l2_linux"]}
-    inv["all"]["vars"] = {"domain": model.get("domain"), "clusters": model.get("clusters", [])}
+    inv["all"]["vars"] = {
+        "domain": model.get("domain"),
+        "clusters": model.get("clusters", []),
+        # Azure Arc の接続先 (確定モデル) と資格情報 (環境変数経由)。
+        # 資格情報は宣言にもリポジトリにも置かず、bootstrap が build/arc-cred.json か
+        # 引数から読んで Invoke-Ansible の環境変数として渡す。
+        "azure_arc": model.get("azure_arc"),
+        "arc_subscription_id": os.environ.get("ARC_SUBSCRIPTION_ID", ""),
+        "arc_tenant_id": os.environ.get("ARC_TENANT_ID", ""),
+        "arc_service_principal_id": os.environ.get("ARC_SP_ID", ""),
+        "arc_service_principal_secret": os.environ.get("ARC_SP_SECRET", ""),
+    }
 
     print(json.dumps(inv, ensure_ascii=False))
     return 0

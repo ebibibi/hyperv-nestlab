@@ -1,0 +1,96 @@
+---
+# Linux L2 を Azure Arc へオンボードする (制御VM -> SSH)。
+# 公式インストールスクリプト (aka.ms/azcmagent) で azcmagent を導入し、
+# サービスプリンシパルで connect する。どちらも root 権限が要るため become: true。
+
+- name: "Arc(Linux): azcmagent の有無を確認"
+  ansible.builtin.stat:
+    path: /usr/bin/azcmagent
+  register: arc_linux_agent
+
+- name: "Arc(Linux): Connected Machine agent を導入"
+  when: not arc_linux_agent.stat.exists
+  become: true
+  ansible.builtin.shell:
+    cmd: |
+      set -euo pipefail
+      tmp=$(mktemp -d)
+      curl -fsSL "{{ azure_arc.agent.linux_install_script_url }}" -o "$tmp/install_linux_azcmagent.sh"
+      bash "$tmp/install_linux_azcmagent.sh"
+      rm -rf "$tmp"
+    executable: /bin/bash
+    creates: /usr/bin/azcmagent
+
+- name: "Arc(Linux): エージェントの版"
+  become: true
+  ansible.builtin.command: azcmagent version
+  changed_when: false
+  register: arc_linux_version
+
+- name: "Arc(Linux): 版を表示"
+  ansible.builtin.debug:
+    var: arc_linux_version.stdout_lines
+
+- name: "Arc(Linux): 現在の接続状態を取得"
+  become: true
+  ansible.builtin.command: azcmagent show -j
+  changed_when: false
+  failed_when: false
+  register: arc_linux_status
+
+- name: "Arc(Linux): 接続状態を解釈"
+  ansible.builtin.set_fact:
+    arc_linux_state: "{{ (arc_linux_status.stdout | from_json) if (arc_linux_status.rc == 0 and arc_linux_status.stdout | length > 0) else {} }}"
+
+- name: "Arc(Linux): 別の接続先に繋がっていれば一度切断"
+  become: true
+  no_log: true
+  when:
+    - arc_linux_state.status | default('') == 'Connected'
+    - (arc_linux_state.resourceGroup | default('') != azure_arc.resource_group) or
+      (arc_linux_state.subscriptionId | default('') != (azure_arc.subscription_id | default(arc_subscription_id, true)))
+  ansible.builtin.command:
+    argv:
+      - azcmagent
+      - disconnect
+      - --service-principal-id
+      - "{{ arc_service_principal_id }}"
+      - --service-principal-secret
+      - "{{ arc_service_principal_secret }}"
+      - --tenant-id
+      - "{{ azure_arc.tenant_id | default(arc_tenant_id, true) }}"
+
+- name: "Arc(Linux): 未接続なら azcmagent connect"
+  become: true
+  no_log: true
+  when: >-
+    arc_linux_state.status | default('') != 'Connected' or
+    arc_linux_state.resourceGroup | default('') != azure_arc.resource_group or
+    arc_linux_state.subscriptionId | default('') != (azure_arc.subscription_id | default(arc_subscription_id, true))
+  ansible.builtin.command:
+    argv: >-
+      {{
+        [
+          'azcmagent', 'connect',
+          '--service-principal-id', arc_service_principal_id,
+          '--service-principal-secret', arc_service_principal_secret,
+          '--tenant-id', (azure_arc.tenant_id | default(arc_tenant_id, true)),
+          '--subscription-id', (azure_arc.subscription_id | default(arc_subscription_id, true)),
+          '--resource-group', azure_arc.resource_group,
+          '--location', azure_arc.location
+        ] + (['--tags', arc_tag_string] if (arc_tag_string | length > 0) else [])
+      }}
+  register: arc_linux_connect
+
+- name: "Arc(Linux): 接続後の状態を確認 (Connected でなければ失敗)"
+  become: true
+  ansible.builtin.command: azcmagent show -j
+  changed_when: false
+  register: arc_linux_verify
+
+- name: "Arc(Linux): 接続結果"
+  ansible.builtin.assert:
+    that:
+      - (arc_linux_verify.stdout | from_json).status == 'Connected'
+    fail_msg: "azcmagent connect 後も status が Connected になりません: {{ (arc_linux_verify.stdout | from_json).status | default('unknown') }}"
+    success_msg: "connected: {{ (arc_linux_verify.stdout | from_json).resourceName }} -> {{ (arc_linux_verify.stdout | from_json).resourceGroup }}"

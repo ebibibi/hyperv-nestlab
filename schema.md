@@ -47,6 +47,41 @@ applications: [claude_code, microsoft_word]
 
 - `claude_code`: Anthropic公式Windows native installerのstable channel。ドメイン管理者プロファイルに導入する。
 - `microsoft_word`: Microsoft公式Office Deployment ToolでMicrosoft 365 Apps版Wordのみを導入する。ライセンス認証は利用者のサインイン後に行う。
+### Azure Arc への登録
+
+L2 を **Azure Arc-enabled servers** として Azure に登録できる。接続先は L2 宣言のトップレベル
+`azure_arc` に **1 か所だけ**書き、各 VM は `arc: true`（継承可能・既定 `false`）で参加を選ぶ。
+
+```yaml
+azure_arc:
+  resource_group: rg-nestlab-arc   # 必須
+  location: japaneast              # 必須
+  subscription_id: "..."           # 任意 (省略時は資格情報ファイルの値)
+  tenant_id: "..."                 # 任意 (同上)
+  tags: { lab: hyperv-nestlab }    # 任意
+  agent:                           # 任意 (配布物 URL を版固定したいとき)
+    windows_msi_url: https://aka.ms/AzureConnectedMachineAgent
+    linux_install_script_url: https://aka.ms/azcmagent
+
+defaults:
+  arc: true                        # defaults / group / vm / overrides のどこでも書ける
+```
+
+**シークレットは宣言に書かない。** オンボードに使うサービスプリンシパルは
+`scripts/New-ArcOnboarding.ps1` が作り、`build/arc-cred.json`（`.gitignore` 済み）へ出力する。
+`bootstrap.ps1` はこのファイルを自動で読み、`configure_arc.yml` へ環境変数として渡す
+（`-ArcServicePrincipalId` / `-ArcServicePrincipalSecret` 等で明示指定も可能）。
+
+適用は Ansible ロール `azure_arc`（Windows は WinRM、Linux は SSH）。`azcmagent` を導入し、
+未接続なら `azcmagent connect` する。既に同じサブスクリプション/リソースグループへ
+Connected なら **no-change**（別の接続先に繋がっていれば切断してから繋ぎ直す）。
+
+検証は resolver が行う。`arc: true` の VM があるのに `azure_arc` が無い場合、逆に `azure_arc`
+を書いて参加 VM がゼロの場合は、**VM を 1 台も作る前に**中断する。
+
+> L2 は L1 の二段 NAT 越しにアウトバウンド 443 でインターネットへ出る。Arc の登録も接続後の
+> 通信もこの経路だけで完結し、インバウンドのポート開放・VPN・踏み台は要らない。
+
 - `language`（ゲスト言語）: 例 `en-us` / `ja-jp`。未指定は `en-us`。
   - **Windows**: その言語の ISO を自動取得し言語別 golden (`win2025-golden-<lang>.vhdx`) を生成。
   - **Linux**: 単一 cloud image + cloud-init で `locale`（例 `ja_JP.UTF-8`）を設定。

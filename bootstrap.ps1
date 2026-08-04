@@ -36,7 +36,15 @@ param(
     [string] $Secrets = "secrets.yml",
     [string] $BuildDir = "build",
     # golden に焼く L1/L2 ローカル管理者パスワード。L1/L2 への PowerShell Direct にも使う。
-    [string] $GoldenAdminPassword = "P@ssw0rd-Lab-Change!"
+    [string] $GoldenAdminPassword = "P@ssw0rd-Lab-Change!",
+    # Azure Arc オンボード用のサービスプリンシパル。宣言 (azure_arc) には接続先だけを書き、
+    # 資格情報はここか build/arc-cred.json (非追跡) から渡す。
+    # scripts/New-ArcOnboarding.ps1 が SP 作成と arc-cred.json 生成を自動化する。
+    [string] $ArcCredential,
+    [string] $ArcSubscriptionId,
+    [string] $ArcTenantId,
+    [string] $ArcServicePrincipalId,
+    [string] $ArcServicePrincipalSecret
 )
 
 $ErrorActionPreference = "Stop"
@@ -427,6 +435,40 @@ if ($model.vms | Where-Object { ($_.os -notmatch 'ubuntu|debian|linux') -and ($_
     & (Join-Path $RepoRoot "control-node\Invoke-Ansible.ps1") -RepoRoot $RepoRoot -Model $Resolved -Playbook "configure_l2.yml" -L1Password $GoldenAdminPassword
     if ($LASTEXITCODE -ne 0) { Fail "L2 OS内構成 (features) に失敗しました。" }
     Write-Ok "L2 OS内構成完了"
+}
+
+# ---------------------------------------------------------------- 6c. Azure Arc オンボード
+# 宣言で arc: true を持つ L2 があれば、Connected Machine agent を入れて Azure Arc に接続する。
+# 接続先は宣言 (azure_arc)、資格情報は引数か build/arc-cred.json (非追跡) から。
+if ($model.vms | Where-Object { $_.arc }) {
+    if (-not $model.azure_arc) { Fail "arc: true の VM がありますが、L2 宣言に azure_arc がありません。" }
+
+    # 資格情報の解決: 明示引数 > -ArcCredential のファイル > build/arc-cred.json
+    $arcCredPath = if ($ArcCredential) { $ArcCredential } else { Join-Path $RepoRoot "$BuildDir\arc-cred.json" }
+    $arcSub = $ArcSubscriptionId; $arcTen = $ArcTenantId
+    $arcSpId = $ArcServicePrincipalId; $arcSpSecret = $ArcServicePrincipalSecret
+    if ((-not $arcSpId -or -not $arcSpSecret) -and (Test-Path $arcCredPath)) {
+        $ac = Get-Content $arcCredPath -Raw | ConvertFrom-Json
+        if (-not $arcSub)      { $arcSub = $ac.subscription_id }
+        if (-not $arcTen)      { $arcTen = $ac.tenant_id }
+        if (-not $arcSpId)     { $arcSpId = $ac.service_principal_id }
+        if (-not $arcSpSecret) { $arcSpSecret = $ac.service_principal_secret }
+    }
+    if (-not $arcSub) { $arcSub = $model.azure_arc.subscription_id }
+    if (-not $arcTen) { $arcTen = $model.azure_arc.tenant_id }
+    if (-not $arcSpId -or -not $arcSpSecret -or -not $arcSub -or -not $arcTen) {
+        Fail ("Azure Arc の資格情報がありません。scripts\New-ArcOnboarding.ps1 を実行して " +
+              "$arcCredPath を作るか、-ArcServicePrincipalId/-ArcServicePrincipalSecret 等を指定してください。")
+    }
+
+    Write-Step "L2 を Azure Arc へオンボード (Ansible: configure_arc.yml)"
+    & (Join-Path $RepoRoot "control-node\Invoke-Ansible.ps1") -RepoRoot $RepoRoot -Model $Resolved -Playbook "configure_arc.yml" `
+        -L1Password $GoldenAdminPassword `
+        -ArcSubscriptionId $arcSub -ArcTenantId $arcTen `
+        -ArcServicePrincipalId $arcSpId -ArcServicePrincipalSecret $arcSpSecret
+    if ($LASTEXITCODE -ne 0) { Fail "Azure Arc へのオンボードに失敗しました。" }
+    $arcCount = @($model.vms | Where-Object { $_.arc }).Count
+    Write-Ok ("Azure Arc オンボード完了 ({0} 台 -> {1})" -f $arcCount, $model.azure_arc.resource_group)
 }
 
 # ---------------------------------------------------------------- 7. クラスタ + S2D
