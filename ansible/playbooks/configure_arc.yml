@@ -1,0 +1,24 @@
+---
+# 宣言で arc: true を書いた L2 ゲストを Azure Arc へオンボードする。
+# 実行タイミング: create_l2 + アクセス初期化 (+ AD 参加) の後。L2 は L1 の二段 NAT 越しに
+# アウトバウンド 443 でインターネットへ出られる前提 (KB/0021 のルーテッド LabNAT)。
+#
+# 接続情報は 2 系統に分かれている:
+#   - 接続先 (subscription / resource group / location / tags) … L2 宣言の azure_arc (確定モデル)
+#   - 資格情報 (サービスプリンシパル) … 環境変数 ARC_SP_ID / ARC_SP_SECRET など (非追跡)
+# シークレットを宣言にもリポジトリにも置かないための分離。
+#
+# 接続資格情報 (WinRM/SSH) は configure_l2.yml と同じ理由で play では上書きしない (KB/0019)。
+- name: "L2: Azure Arc へオンボード (Windows)"
+  hosts: l2_windows
+  gather_facts: false
+  roles:
+    - role: azure_arc
+      when: arc | default(false) | bool
+
+- name: "L2: Azure Arc へオンボード (Linux)"
+  hosts: l2_linux
+  gather_facts: false
+  roles:
+    - role: azure_arc
+      when: arc | default(false) | bool

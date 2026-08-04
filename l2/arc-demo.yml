@@ -1,0 +1,42 @@
+# Azure Arc デモ環境: Windows Server 2025 と Ubuntu 24.04 を 1 台ずつ作り、
+# どちらも Azure Arc (Arc-enabled servers) へオンボードする。
+# ドメインは作らない (Arc の疎通と Run Command の確認に集中するため)。
+#
+# 事前準備 (1 回だけ):
+#   .\scripts\New-ArcOnboarding.ps1 -SubscriptionId <sub> -ResourceGroup rg-hccjp76-arc -Location japaneast
+#   -> build/arc-cred.json (非追跡) が作られ、bootstrap が自動で読む。
+#
+# 実行:
+#   .\bootstrap.ps1 -L1 l1\standard-host.yml -L2 l2\arc-demo.yml
+#
+# 接続先はここに 1 か所だけ書き、各 VM は arc: true で参加を選ぶ。
+# シークレット (サービスプリンシパル) はこのファイルには書かない。
+azure_arc:
+  resource_group: rg-hccjp76-arc
+  location: japaneast
+  tags:
+    lab: hyperv-nestlab
+    purpose: hccjp76-arc-demo
+
+defaults:
+  cpu: 2
+  memory_gb: 4
+  arc: true
+
+groups:
+  # Windows Server 2025。IIS を入れて「動いている Web サイト」を用意する
+  # (壊す/直すデモの題材。Arc の Run Command から復旧できることを確認する)。
+  - name: win
+    name_prefix: arcwin
+    count: 1
+    ip_from: 10.10.0.51
+    os: windows_server_2025
+    memory_gb: 6
+    features: [Web-Server, Web-Mgmt-Console]
+
+  # Ubuntu 24.04 (cloud image + cloud-init)。Arc 経由の Run Command を Linux 側でも確認する。
+  - name: linux
+    name_prefix: arclnx
+    count: 1
+    ip_from: 10.10.0.41
+    os: ubuntu_2404

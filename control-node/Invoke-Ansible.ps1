@@ -26,7 +26,13 @@ param(
     [string]$CredFile,
     [string]$L1Addr = "10.20.0.20",
     [string]$L1User = "Administrator",
-    [string]$L1Password
+    [string]$L1Password,
+    # Azure Arc オンボード用 (configure_arc.yml のときだけ使う)。
+    # シークレットはリポジトリにも宣言にも置かず、ここから環境変数で制御 VM へ渡す。
+    [string]$ArcSubscriptionId,
+    [string]$ArcTenantId,
+    [string]$ArcServicePrincipalId,
+    [string]$ArcServicePrincipalSecret
 )
 $ErrorActionPreference = "Stop"
 $runner = Join-Path $RepoRoot "scripts\ctrl\Run-OnControl.ps1"
@@ -97,6 +103,10 @@ export L1_ADDR='$L1Addr'
 export L1_USER='$L1User'
 export L1_PASSWORD='$L1Password'
 export ANSIBLE_HOST_KEY_CHECKING=False
+export ARC_SUBSCRIPTION_ID='$ArcSubscriptionId'
+export ARC_TENANT_ID='$ArcTenantId'
+export ARC_SP_ID='$ArcServicePrincipalId'
+export ARC_SP_SECRET='$ArcServicePrincipalSecret'
 ansible-playbook -i inventory/resolved_inventory.py playbooks/$Playbook
 "@
 # この .ps1 自体が CRLF で clone されると here-string も CRLF になり、bash に渡すと

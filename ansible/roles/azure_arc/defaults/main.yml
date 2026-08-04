@@ -1,0 +1,5 @@
+---
+# タグは azcmagent の --tags に "k=v,k2=v2" 形式で渡す。宣言 (azure_arc.tags) が空なら付けない。
+arc_tag_string: >-
+  {{ (azure_arc.tags | default({}) | dict2items | map(attribute='key') | zip(azure_arc.tags | default({}) | dict2items | map(attribute='value'))
+      | map('join', '=') | join(',')) if (azure_arc.tags | default({}) | length > 0) else '' }}

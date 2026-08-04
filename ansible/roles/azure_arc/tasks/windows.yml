@@ -1,0 +1,100 @@
+---
+# Windows L2 を Azure Arc へオンボードする (制御VM -> WinRM)。
+# azcmagent は Connected Machine agent の CLI。MSI で導入し、サービスプリンシパルで connect する。
+# KB/0008 のとおり win_powershell の引数は文字列で渡るため、script 側で param([string]...) で受ける。
+
+- name: "Arc(Windows): Connected Machine agent を冪等に導入"
+  ansible.windows.win_powershell:
+    error_action: stop
+    parameters:
+      MsiUrl: "{{ azure_arc.agent.windows_msi_url }}"
+    script: |
+      param([string]$MsiUrl)
+      $ErrorActionPreference = 'Stop'
+      $exe = Join-Path $env:ProgramW6432 'AzureConnectedMachineAgent\azcmagent.exe'
+      if (Test-Path $exe) {
+          $Ansible.Changed = $false
+          $Ansible.Result = (& $exe version | Out-String).Trim()
+          return
+      }
+      [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+      $work = 'C:\ProgramData\hyperv-nestlab\arc'
+      New-Item -ItemType Directory -Path $work -Force | Out-Null
+      $msi = Join-Path $work 'AzureConnectedMachineAgent.msi'
+      Invoke-WebRequest -Uri $MsiUrl -OutFile $msi -UseBasicParsing
+      $log = Join-Path $work 'install.log'
+      $p = Start-Process -FilePath msiexec.exe -ArgumentList "/i `"$msi`" /qn /l*v `"$log`"" -Wait -PassThru
+      if ($p.ExitCode -ne 0) { throw "azcmagent MSI の導入に失敗しました (exit $($p.ExitCode))。ログ: $log" }
+      if (-not (Test-Path $exe)) { throw "MSI は成功しましたが $exe が見つかりません" }
+      $Ansible.Changed = $true
+      $Ansible.Result = (& $exe version | Out-String).Trim()
+  register: arc_win_agent
+
+- name: "Arc(Windows): エージェントの版"
+  ansible.builtin.debug:
+    var: arc_win_agent.result
+
+- name: "Arc(Windows): 未接続なら azcmagent connect (接続済みなら no-change)"
+  no_log: true
+  ansible.windows.win_powershell:
+    error_action: stop
+    parameters:
+      SubscriptionId: "{{ azure_arc.subscription_id | default(arc_subscription_id, true) }}"
+      ResourceGroup: "{{ azure_arc.resource_group }}"
+      Location: "{{ azure_arc.location }}"
+      TenantId: "{{ azure_arc.tenant_id | default(arc_tenant_id, true) }}"
+      ServicePrincipalId: "{{ arc_service_principal_id }}"
+      ServicePrincipalSecret: "{{ arc_service_principal_secret }}"
+      Tags: "{{ arc_tag_string }}"
+    script: |
+      param(
+        [string]$SubscriptionId, [string]$ResourceGroup, [string]$Location,
+        [string]$TenantId, [string]$ServicePrincipalId, [string]$ServicePrincipalSecret,
+        [string]$Tags
+      )
+      $ErrorActionPreference = 'Stop'
+      $exe = Join-Path $env:ProgramW6432 'AzureConnectedMachineAgent\azcmagent.exe'
+
+      # 既に Connected で、かつ同じリソースグループ/サブスクリプションなら何もしない。
+      $statusJson = & $exe show -j 2>$null
+      if ($LASTEXITCODE -eq 0 -and $statusJson) {
+          $status = $statusJson | Out-String | ConvertFrom-Json
+          if ($status.status -eq 'Connected' -and
+              $status.subscriptionId -eq $SubscriptionId -and
+              $status.resourceGroup -eq $ResourceGroup) {
+              $Ansible.Changed = $false
+              $Ansible.Result = "already connected: $($status.resourceName) ($($status.status))"
+              return
+          }
+          if ($status.status -eq 'Connected') {
+              # 別の接続先に繋がっている場合は一度切ってから繋ぎ直す (宣言が正)。
+              & $exe disconnect --service-principal-id $ServicePrincipalId `
+                  --service-principal-secret $ServicePrincipalSecret --tenant-id $TenantId | Out-Null
+          }
+      }
+
+      $args = @(
+        'connect',
+        '--service-principal-id', $ServicePrincipalId,
+        '--service-principal-secret', $ServicePrincipalSecret,
+        '--tenant-id', $TenantId,
+        '--subscription-id', $SubscriptionId,
+        '--resource-group', $ResourceGroup,
+        '--location', $Location
+      )
+      if ($Tags) { $args += @('--tags', $Tags) }
+
+      $out = & $exe @args 2>&1 | Out-String
+      if ($LASTEXITCODE -ne 0) {
+          # シークレットは出力に載せない (azcmagent 自身もマスクするが二重に防ぐ)
+          throw "azcmagent connect に失敗しました (exit $LASTEXITCODE): $($out -replace [regex]::Escape($ServicePrincipalSecret), '***')"
+      }
+      $status = (& $exe show -j | Out-String | ConvertFrom-Json)
+      if ($status.status -ne 'Connected') { throw "connect 後も status が $($status.status) です" }
+      $Ansible.Changed = $true
+      $Ansible.Result = "connected: $($status.resourceName) -> $($status.resourceGroup)"
+  register: arc_win_connect
+
+- name: "Arc(Windows): 接続結果"
+  ansible.builtin.debug:
+    var: arc_win_connect.result

@@ -108,6 +108,34 @@ L0  物理 Hyper-V ホスト  ── あなたが用意する唯一の前提
 .\bootstrap.ps1 -L1 l1\standard-host.yml -L2 l2\ad-forest.yml
 ```
 
+### L2 を Azure Arc に登録する (arc)
+
+L2 宣言に接続先 `azure_arc` を 1 か所書き、登録したい VM に `arc: true` を付けるだけで、
+**Connected Machine agent の導入から `azcmagent connect` までを冪等に**行う。
+インバウンド開放も VPN も踏み台も要らない（通信はアウトバウンド 443 のみ）。
+
+```powershell
+# 1) オンボード用サービスプリンシパルを作る (初回だけ。build/arc-cred.json が出力される)
+.\scripts\New-ArcOnboarding.ps1 -SubscriptionId <sub> -ResourceGroup rg-nestlab-arc -Location japaneast
+
+# 2) 宣言に沿って構築 -> Arc 登録まで一括
+.\bootstrap.ps1 -L1 l1\standard-host.yml -L2 l2\arc-demo.yml
+```
+
+```yaml
+# l2/arc-demo.yml (抜粋) — シークレットは書かない
+azure_arc:
+  resource_group: rg-nestlab-arc
+  location: japaneast
+defaults:
+  arc: true
+```
+
+同梱の `l2/arc-demo.yml` は Windows Server 2025 と Ubuntu 24.04 を 1 台ずつ作り、両方を Arc に
+登録する。登録後は Azure 側から **Run Command** でゲスト内のコマンドを実行できる
+（実行には `Azure Connected Machine Resource Administrator` 以上が必要。オンボード用 SP は
+最小権限のため含まない）。詳しい文法は [`schema.md`](schema.md) の「Azure Arc への登録」。
+
 ### L2 に Windows 機能を入れる (features / 例: IIS)
 L2 VM の宣言に `features` を書くと、その Windows 機能を **Ansible (制御VM→WinRM, L1ルータ経由)** で冪等に導入します。
 L2 のゲスト内構成は AD を除き **Ansible が本線**（クラスタ構築 `create_cluster.yml` と同じ経路）。
