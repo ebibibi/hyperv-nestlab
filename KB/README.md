@@ -46,3 +46,4 @@ Windows golden / S2D まわりの**汎用ノウハウ集**でもあります。
 | [0024](0024-additional-domain-controller.md) | 追加ドメインコントローラーを足す（複製検証ができない） | 実装は先頭DCのみ昇格。追加DCは動的メモリで作る（固定は0x8007000E）。昇格後ADWS停止はKB/0007が2台目でも再発 |
 | [0025](0025-domainless-l2-has-no-dns.md) | ドメイン無し構成の L2 は DNS を持たない（名前解決が全滅） | 既定はモデル側に1つ。ゲートウェイを DNS 代わりにしない |
 | [0026](0026-linux-l2-differencing-disk-inherits-parent-size.md) | Linux L2 の容量が宣言どおりにならない（差分ディスクは親のサイズを継承） | 子を作る前に親を拡張する。growpart のせいで df は正常に見える |
+| [0027](0027-run-bootstrap-over-ssh.md) | bootstrap を SSH 越し(非対話)で流すと無限ハング/途中で死ぬ | ssh は stdin を読む・SSHセッション終了で子が死ぬ・SYSTEMからは user配下のPythonが見えない |
