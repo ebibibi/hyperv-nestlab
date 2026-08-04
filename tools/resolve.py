@@ -44,8 +44,13 @@ DEFAULT_OS_DISK_GB = 80
 # language も継承対象 (L1.l2_defaults < L2.defaults < group < overrides)
 INHERITABLE = (
     "cpu", "memory_gb", "os", "generation", "domain_join", "disk_gb",
-    "language", "features", "applications", "arc",
+    "language", "features", "applications", "arc", "dns",
 )
+
+# L2 が名前解決に使う既定 DNS。ドメインがある構成では DC を使うのでここには来ない。
+# ドメイン無し構成では L1 (ゲートウェイ) は DNS サーバーではないため、明示的な既定が要る
+# (Linux の cloud-init シードも同じ既定を使う)。宣言の dns: で上書きできる。
+DEFAULT_L2_DNS = ["1.1.1.1", "8.8.8.8"]
 
 # Azure Arc エージェント配布物の既定 URL。版を固定したい場合は L2 宣言の
 # azure_arc.agent.* で差し替える (原則②: 決定性はカタログ/宣言側で担保)。
@@ -119,6 +124,20 @@ def deep_merge(base, over):
 
 def pick(d, keys):
     return {k: d[k] for k in keys if k in d}
+
+
+def resolve_dns(spec, dns_default):
+    """VM の DNS を決める。宣言 (dns) > ドメイン参加時の DC > 既定 (公開リゾルバ)。
+
+    戻り値は必ずリスト。ゲートウェイは DNS サーバーではないため使わない
+    (ドメイン無し構成で名前解決ができず、パッケージ取得や Azure Arc の登録が失敗する)。
+    """
+    declared = spec.get("dns")
+    if declared:
+        return [declared] if isinstance(declared, str) else list(declared)
+    if spec.get("domain_join") and dns_default:
+        return [dns_default]
+    return list(DEFAULT_L2_DNS)
 
 
 def make_disks(spec, data_disks):
@@ -210,10 +229,9 @@ def resolve(l1, l2):
             spec = deep_merge(base, group_settings)
             spec["name"] = name
             spec["disks"] = make_disks(spec, data_disks)
-            dns = dns_default if spec.get("domain_join") else None
-            nic = {"switch": switch, "ip": ip, "gw": gw}
-            if dns:
-                nic["dns"] = dns
+            # DNS の解決順: 宣言の dns > (ドメイン参加なら) DC > 既定 (公開リゾルバ)。
+            # ゲートウェイ (L1) は DNS サーバーではないので、フォールバック先にしてはいけない。
+            nic = {"switch": switch, "ip": ip, "gw": gw, "dns": resolve_dns(spec, dns_default)}
             spec["nics"] = [nic]
             prov = {"roles": list(roles)}
             if cluster:

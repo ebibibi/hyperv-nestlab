@@ -49,7 +49,7 @@ def test_data_disks_sugar_expands():
 def test_dns_autocomplete_points_to_dc():
     m = build(REPO / "l2" / "fileserver-s2d.yml")
     fs01 = next(v for v in m["vms"] if v["name"] == "fs01")
-    assert fs01["nics"][0]["dns"] == "10.10.0.10"
+    assert fs01["nics"][0]["dns"] == ["10.10.0.10"]
 
 
 def test_cluster_derived_from_group():
@@ -74,7 +74,7 @@ def test_override_escape_hatch():
 def test_applications_are_inherited_by_admin_vm():
     m = build(FIX / "good-applications.yml")
     admin01 = next(v for v in m["vms"] if v["name"] == "admin01")
-    assert admin01["nics"][0]["dns"] == "10.10.0.10"
+    assert admin01["nics"][0]["dns"] == ["10.10.0.10"]
     assert admin01["disks"][0]["size_gb"] == 120
     assert admin01["applications"] == ["claude_code", "microsoft_word"]
     assert admin01["management"] == {"external_port": 15986, "internal_port": 5985}
@@ -178,3 +178,29 @@ def test_arc_target_without_participants_is_rejected():
     }
     with pytest.raises(resolve.ConfigError, match="arc: true"):
         resolve.resolve(l1, l2)
+
+
+# ---------------- DNS ----------------
+
+def test_domainless_l2_gets_default_resolver_not_gateway():
+    """ドメイン無しでも DNS が入る。L1 (ゲートウェイ) は DNS サーバーではないため使わない。"""
+    m = build(REPO / "l2" / "arc-demo.yml")
+    for vm in m["vms"]:
+        assert vm["nics"][0]["dns"] == resolve.DEFAULT_L2_DNS
+        assert vm["nics"][0]["dns"] != [vm["nics"][0]["gw"]]
+
+
+def test_declared_dns_wins_over_dc_and_default():
+    """宣言した dns は DC 自動補完より優先され、単一値でもリストに正規化される。"""
+    l1 = resolve.load_yaml(L1)
+    l2 = {
+        "defaults": {"os": "windows_server_2025"},
+        "groups": [
+            {"name": "a", "count": 1, "ip_from": "10.10.0.51", "dns": "10.10.0.99"},
+            {"name": "b", "count": 1, "ip_from": "10.10.0.61", "dns": ["10.10.0.98", "1.1.1.1"]},
+        ],
+    }
+    resolve.validate_schema(l2, "l2.schema.json", "L2")
+    m = resolve.resolve(l1, l2)
+    dns = {v["name"]: v["nics"][0]["dns"] for v in m["vms"]}
+    assert dns == {"a01": ["10.10.0.99"], "b01": ["10.10.0.98", "1.1.1.1"]}

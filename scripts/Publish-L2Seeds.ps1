@@ -52,8 +52,14 @@ foreach ($vm in $linux) {
     $cidr = "$ip/$prefix"
     $seed = Join-Path $localSeedDir "$name-seed.vhdx"
     $locale = if ($vm.locale) { $vm.locale } else { 'en_US.UTF-8' }
-    Log "シード生成: $name ($cidr gw=$gw locale=$locale)"
-    & $seedScript -SeedPath $seed -Hostname $name -IPCidr $cidr -Gateway $gw -SshPubKey $pub -Locale $locale | Out-Null
+    # DNS は確定モデル (resolver が 宣言 > DC > 既定 の順で決めたもの) を使う。
+    $dns = @($vm.nics[0].dns) | Where-Object { $_ }
+    Log "シード生成: $name ($cidr gw=$gw dns=$($dns -join ',') locale=$locale)"
+    if ($dns) {
+        & $seedScript -SeedPath $seed -Hostname $name -IPCidr $cidr -Gateway $gw -SshPubKey $pub -Locale $locale -Dns $dns | Out-Null
+    } else {
+        & $seedScript -SeedPath $seed -Hostname $name -IPCidr $cidr -Gateway $gw -SshPubKey $pub -Locale $locale | Out-Null
+    }
     $made += [pscustomobject]@{ Name=$name; Local=$seed }
 }
 
