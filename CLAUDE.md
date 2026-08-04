@@ -82,4 +82,5 @@
 - `control-node/Invoke-Ansible.ps1` — 制御VMへ同期し collection/pywinrm[credssp] 導入 + playbook 実行。
 - `tools/resolve.py` — L1+L2 宣言 → build/resolved.json に展開・検証。
 - `scripts/New-ArcOnboarding.ps1` — Azure Arc オンボード用 SP を作り build/arc-cred.json を出力 (非追跡)。
+- `scripts/Expand-LinuxBaseImage.ps1` — Linux ベース VHDX を宣言サイズへ拡張 (差分ディスクの親)。
 - `ansible/playbooks/configure_arc.yml` — arc: true の L2 を Arc へ冪等オンボード (role: azure_arc)。
