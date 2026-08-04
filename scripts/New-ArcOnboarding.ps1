@@ -100,15 +100,21 @@ $cred = [ordered]@{
 }
 New-Item -ItemType Directory -Path (Split-Path -Parent $OutFile) -Force | Out-Null
 $cred | ConvertTo-Json | Set-Content -Path $OutFile -Encoding UTF8
-# 所有者以外に読ませない (build/ は .gitignore 済みだが、ファイル権限でも守る)
+# 所有者以外に読ませない (build/ は .gitignore 済みだが、ファイル権限でも守る)。
+# 本スクリプトは pwsh 7 なら Linux/macOS でも動く (az があればどこで作ってもよい) ため、
+# Windows 以外では Get-Acl/Set-Acl が無い。プラットフォームで分岐する。
 try {
-    $acl = Get-Acl $OutFile
-    $acl.SetAccessRuleProtection($true, $false)
-    $me = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
-    $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($me, "FullControl", "Allow")))
-    Set-Acl -Path $OutFile -AclObject $acl
+    if ($IsWindows -or $PSVersionTable.PSVersion.Major -le 5) {
+        $acl = Get-Acl $OutFile
+        $acl.SetAccessRuleProtection($true, $false)
+        $me = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+        $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($me, "FullControl", "Allow")))
+        Set-Acl -Path $OutFile -AclObject $acl
+    } else {
+        & chmod 600 $OutFile
+    }
 } catch {
-    Write-Host "  !!  ファイル ACL の制限に失敗しました (処理は続行): $($_.Exception.Message)" -ForegroundColor Yellow
+    Write-Host "  !!  ファイル権限の制限に失敗しました (処理は続行): $($_.Exception.Message)" -ForegroundColor Yellow
 }
 
 Write-Host ""
