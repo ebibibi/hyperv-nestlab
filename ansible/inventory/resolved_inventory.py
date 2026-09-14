@@ -40,6 +40,8 @@ def main():
     inv["l2_linux"] = empty()
     inv["domain_controllers"] = empty()
     inv["cluster_nodes"] = empty()
+    inv["kdc_proxies"] = empty()
+    inv["kerberos_clients"] = empty()
 
     # L0 物理ホスト。制御 VM から見たホスト IP は CtrlNAT ゲートウェイ (既定 10.20.0.1)。
     l0_host = os.environ.get("HYPERV_HOST", "hyperv-host")
@@ -91,6 +93,7 @@ def main():
     # 従来どおり IP + ntlm/credssp を温存する)。
     domain = model.get("domain")
     realm = domain["fqdn"].upper() if domain else None
+    kerberos = model.get("kerberos")
     guest_pw = os.environ.get("L2_GUEST_PASSWORD", "P@ssw0rd-Lab-Change!")
 
     for vm in model.get("vms", []):
@@ -110,6 +113,10 @@ def main():
             hv["ansible_port"] = management["external_port"]
         if vm.get("provision", {}).get("forest"):
             inv["domain_controllers"]["hosts"].append(name)
+        if kerberos and name == kerberos["kdc_proxy"]["host"]:
+            inv["kdc_proxies"]["hosts"].append(name)
+        if vm.get("kerberos_client"):
+            inv["kerberos_clients"]["hosts"].append(name)
         if name in cluster_members:
             inv["cluster_nodes"]["hosts"].append(name)
             hv["cluster"] = next((c for c in clusters.values() if name in c["nodes"]), None)
@@ -128,6 +135,8 @@ def main():
     inv["all"]["vars"] = {
         "domain": model.get("domain"),
         "clusters": model.get("clusters", []),
+        # Kerberos (KDC プロキシ) 検証ラボの宣言。未使用の構成では None。
+        "kerberos": model.get("kerberos"),
         # Azure Arc の接続先 (確定モデル) と資格情報 (環境変数経由)。
         # 資格情報は宣言にもリポジトリにも置かず、bootstrap が build/arc-cred.json か
         # 引数から読んで Invoke-Ansible の環境変数として渡す。

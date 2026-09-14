@@ -84,3 +84,5 @@
 - `scripts/New-ArcOnboarding.ps1` — Azure Arc オンボード用 SP を作り build/arc-cred.json を出力 (非追跡)。
 - `scripts/Expand-LinuxBaseImage.ps1` — Linux ベース VHDX を宣言サイズへ拡張 (差分ディスクの親)。
 - `ansible/playbooks/configure_arc.yml` — arc: true の L2 を Arc へ冪等オンボード (role: azure_arc)。
+- `ansible/playbooks/configure_kerberos.yml` — kerberos 宣言時に KDC プロキシ(KpsSvc)を立て、
+  ワークグループ機へ realm マッピングと検証用 rdp を配る (role: kerberos_kdcproxy)。

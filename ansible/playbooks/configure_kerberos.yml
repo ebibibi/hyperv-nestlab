@@ -1,0 +1,54 @@
+---
+# 非ドメイン参加クライアントから KDC プロキシ経由で Kerberos が成立するかを検証するラボの構成。
+# 実行タイミング: create_l2 + Initialize-L2Access + AD (参加) の後。configure_l2 と同じ前提。
+#
+# 対象は動的インベントリが作る 2 グループ:
+#   kdc_proxies      : kerberos.kdc_proxy.host に指定したドメイン参加ホスト
+#   kerberos_clients : kerberos_client: true のワークグループ機
+- name: "KDC プロキシの証明書を受け渡す一時置き場を用意"
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: "退避ディレクトリ"
+      ansible.builtin.file:
+        path: "{{ kdcproxy_cert_fetch_dir | default('/tmp/hyperv-nestlab-kdcproxy') }}"
+        state: directory
+        mode: "0700"
+
+- name: "Kerberos: KDC プロキシ (KpsSvc) を立てる"
+  hosts: kdc_proxies
+  gather_facts: false
+  vars:
+    kdcproxy_part: server
+    kdcproxy_realm: "{{ domain.fqdn | upper }}"
+    kdcproxy_fqdn: "{{ inventory_hostname }}.{{ domain.fqdn }}"
+    kdcproxy_port: "{{ kerberos.kdc_proxy.port | default(443) }}"
+  roles:
+    - role: kerberos_kdcproxy
+
+- name: "Kerberos: 接続先と KDC プロキシで NTLM 監査を有効化"
+  hosts: l2_windows
+  gather_facts: false
+  vars:
+    kdcproxy_part: audit
+  roles:
+    - role: kerberos_kdcproxy
+      when: ntlm_audit | default(false)
+
+- name: "Kerberos: ワークグループ クライアントを構成"
+  hosts: kerberos_clients
+  gather_facts: false
+  vars:
+    kdcproxy_part: client
+    kdcproxy_realm: "{{ domain.fqdn | upper }}"
+    kdcproxy_netbios: "{{ domain.netbios | default(domain.fqdn.split('.')[0] | upper) }}"
+    kdcproxy_fqdn: "{{ kerberos.kdc_proxy.host }}.{{ domain.fqdn }}"
+    kdcproxy_port: "{{ kerberos.kdc_proxy.port | default(443) }}"
+    kdcproxy_dc_ip: >-
+      {{ (hostvars[kerberos.kdc_proxy.host].nics | first).ip }}
+    kdcproxy_target_name: "{{ kerberos.rdp_target }}"
+    kdcproxy_target_fqdn: "{{ kerberos.rdp_target }}.{{ domain.fqdn }}"
+    kdcproxy_target_ip: >-
+      {{ (hostvars[kerberos.rdp_target].nics | first).ip }}
+  roles:
+    - role: kerberos_kdcproxy

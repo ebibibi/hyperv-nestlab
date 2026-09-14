@@ -1,0 +1,18 @@
+---
+# KDC プロキシ (KpsSvc) を使って、非ドメイン参加クライアントから Kerberos を成立させる。
+#
+# 役割は 3 つに分かれ、呼び出し側の playbook が対象ホストを選んで include する。
+#   server : KpsSvc を立てる (ドメイン参加ホスト)
+#   client : realm マッピング / 証明書信頼 / rdp ファイル生成 (ワークグループ機)
+#   audit  : NTLM 監査を有効化する (before/after を NTLM/Operational で見るため)
+- name: "KDC プロキシ サーバー (KpsSvc)"
+  ansible.builtin.include_tasks: server.yml
+  when: kdcproxy_part == 'server'
+
+- name: "非ドメイン参加クライアントの Kerberos 設定"
+  ansible.builtin.include_tasks: client.yml
+  when: kdcproxy_part == 'client'
+
+- name: "NTLM 監査"
+  ansible.builtin.include_tasks: audit.yml
+  when: kdcproxy_part == 'audit'

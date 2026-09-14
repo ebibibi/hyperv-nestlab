@@ -1,0 +1,31 @@
+---
+# NTLM 監査を有効にして、Kerberos に乗ったか NTLM に落ちたかを事実で確認できるようにする。
+# ログは イベントビューアー > Applications and Services Logs > Microsoft > Windows > NTLM > Operational。
+# 2 = すべてのアカウントについて監査する (ブロックはしない)。
+- name: "NTLM 受信トラフィックの監査を有効化"
+  ansible.windows.win_regedit:
+    path: HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0
+    name: AuditReceivingNTLMTraffic
+    data: 2
+    type: dword
+
+- name: "ドメインへの NTLM 送信の監査を有効化"
+  ansible.windows.win_regedit:
+    path: HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0
+    name: RestrictSendingNTLMTraffic
+    data: 0
+    type: dword
+
+- name: "NTLM Operational ログを有効化"
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = 'Stop'
+      $log = 'Microsoft-Windows-NTLM/Operational'
+      $cfg = wevtutil gl $log
+      if ($cfg -match 'enabled: true') {
+          $Ansible.Changed = $false
+      } else {
+          wevtutil sl $log /e:true
+          $Ansible.Changed = $true
+      }
+      $Ansible.Result = ($cfg -join "`n")
