@@ -204,3 +204,90 @@ def test_declared_dns_wins_over_dc_and_default():
     m = resolve.resolve(l1, l2)
     dns = {v["name"]: v["nics"][0]["dns"] for v in m["vms"]}
     assert dns == {"a01": ["10.10.0.99"], "b01": ["10.10.0.98", "1.1.1.1"]}
+
+
+# ---------------- Kerberos (KDC プロキシ) 検証ラボ ----------------
+
+def test_kerberos_lab_expands_with_workgroup_client():
+    m = build(REPO / "l2" / "kerberos-kdcproxy.yml")
+    names = [v["name"] for v in m["vms"]]
+    assert names == ["dc01", "srv01", "cli01"]
+    cli = next(v for v in m["vms"] if v["name"] == "cli01")
+    # 検証の芯。ここがドメイン参加になったら実験が成立しない。
+    assert cli["domain_join"] is False
+    assert cli["kerberos_client"] is True
+    assert cli["block_direct_kdc"] is True
+
+
+def test_kerberos_block_is_resolved_with_default_port():
+    m = build(REPO / "l2" / "kerberos-kdcproxy.yml")
+    assert m["kerberos"]["kdc_proxy"] == {"host": "dc01", "port": 443}
+    assert m["kerberos"]["rdp_target"] == "srv01"
+
+
+def test_kerberos_client_does_not_use_the_dc_as_resolver():
+    # DNS で KDC を引けてしまうと ksetup の手動マッピングを検証したことにならない。
+    m = build(REPO / "l2" / "kerberos-kdcproxy.yml")
+    cli = next(v for v in m["vms"] if v["name"] == "cli01")
+    assert cli["nics"][0]["dns"] == ["1.1.1.1"]
+
+
+def test_kerberos_flags_default_to_false_when_not_declared():
+    m = build(REPO / "l2" / "ad-forest.yml")
+    assert m["kerberos"] is None
+    assert all(v["kerberos_client"] is False for v in m["vms"])
+
+
+def test_kerberos_client_without_top_level_block_is_rejected(tmp_path):
+    bad = tmp_path / "bad.yml"
+    bad.write_text(
+        "defaults: {os: windows_server_2025}\n"
+        "domain:\n"
+        "  fqdn: corp.contoso.local\n"
+        "  controllers: [{name: dc01, ip: 10.10.0.10}]\n"
+        "groups:\n"
+        "  - {name: w, name_prefix: cli, count: 1, ip_from: 10.10.0.40,\n"
+        "     domain_join: false, kerberos_client: true}\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(resolve.ConfigError) as e:
+        build(bad)
+    assert "kerberos" in str(e.value)
+
+
+def test_kerberos_client_must_not_be_domain_joined(tmp_path):
+    bad = tmp_path / "bad.yml"
+    bad.write_text(
+        "defaults: {os: windows_server_2025}\n"
+        "domain:\n"
+        "  fqdn: corp.contoso.local\n"
+        "  controllers: [{name: dc01, ip: 10.10.0.10}]\n"
+        "kerberos:\n"
+        "  kdc_proxy: {host: dc01}\n"
+        "groups:\n"
+        "  - {name: w, name_prefix: cli, count: 1, ip_from: 10.10.0.40,\n"
+        "     domain_join: corp.contoso.local, kerberos_client: true}\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(resolve.ConfigError) as e:
+        build(bad)
+    assert "domain_join: false" in str(e.value)
+
+
+def test_kerberos_proxy_host_must_exist(tmp_path):
+    bad = tmp_path / "bad.yml"
+    bad.write_text(
+        "defaults: {os: windows_server_2025}\n"
+        "domain:\n"
+        "  fqdn: corp.contoso.local\n"
+        "  controllers: [{name: dc01, ip: 10.10.0.10}]\n"
+        "kerberos:\n"
+        "  kdc_proxy: {host: nosuch}\n"
+        "groups:\n"
+        "  - {name: w, name_prefix: cli, count: 1, ip_from: 10.10.0.40,\n"
+        "     domain_join: false, kerberos_client: true}\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(resolve.ConfigError) as e:
+        build(bad)
+    assert "nosuch" in str(e.value)

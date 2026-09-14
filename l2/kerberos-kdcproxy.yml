@@ -1,0 +1,62 @@
+# 非ドメイン参加クライアントから、KDC プロキシ経由で Kerberos RDP が成立するかを検証するラボ。
+#
+# 検証したい主張:
+#   「クライアント PC がドメインに参加していなくても、realm から KDC を解決できて
+#     KDC に到達できれば Kerberos は成立する。マシンアカウントは要らない。」
+#
+# 「非ドメイン参加なら Kerberos は使えない」という説明が広く出回っているため、
+# クライアントから DC への 88/tcp・88/udp を実際に塞いだ状態で、
+# 443 の KDC プロキシだけを経路として残して成立するかを見る。
+#
+# 構成:
+#   dc01  10.10.0.10  DC + DNS + KDC プロキシ (KpsSvc)
+#   srv01 10.10.0.21  ドメイン参加の RDP 接続先 (お客様環境の「AD 参加させた踏み台」に相当)
+#   cli01 10.10.0.40  ワークグループのクライアント (SIer の手元 PC に相当)
+#
+# 注: dsrm_password は本来 vault 管理だが、自己完結ラボのデモのため具体値を置く。
+defaults:
+  cpu: 2
+  memory_gb: 8
+  os: windows_server_2025
+  domain_join: corp.contoso.local
+
+domain:
+  fqdn: corp.contoso.local
+  netbios: CORP
+  dsrm_password: "P@ssw0rd-DSRM-Lab!"
+  dns_forwarders: [1.1.1.1, 8.8.8.8]
+  controllers:
+    - { name: dc01, ip: 10.10.0.10 }
+
+kerberos:
+  # KpsSvc を動かすドメイン参加ホスト。ラボなので DC 兼務にする。
+  kdc_proxy:
+    host: dc01
+    port: 443
+  # ワークグループ機から RDP する先。Kerberos のサービスチケットはこの SPN に対して出る。
+  rdp_target: srv01
+
+groups:
+  - name: members
+    name_prefix: srv
+    count: 1
+    ip_from: 10.10.0.21
+    # NTLM 監査を見るのは接続先側。受信側の監査を有効にして NTLM/Operational に出す。
+    ntlm_audit: true
+
+  - name: workstations
+    name_prefix: cli
+    count: 1
+    ip_from: 10.10.0.40
+    cpu: 4
+    memory_gb: 8
+    # ワークグループのまま。ここが検証の肝なので domain_join は必ず false。
+    domain_join: false
+    # DC を DNS に向けない。realm の解決は ksetup の手動マッピングだけで行う
+    # (ドメイン参加していない PC が既定で KDC を引けない状況を再現する)。
+    dns: [1.1.1.1]
+    kerberos_client: true
+    # DC への 88 を塞ぐ。塞がないと直接 KDC に届いてしまい、
+    # 「プロキシ経由で成立した」ことを証明できない。
+    block_direct_kdc: true
+    ntlm_audit: true

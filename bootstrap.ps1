@@ -481,6 +481,17 @@ if ($model.vms | Where-Object { $_.arc }) {
     Write-Ok ("Azure Arc オンボード完了 ({0} 台 -> {1})" -f $arcCount, $model.azure_arc.resource_group)
 }
 
+# ---------------------------------------------------------------- 6d. Kerberos (KDC プロキシ)
+# 宣言に kerberos があれば、KDC プロキシ (KpsSvc) を立て、ワークグループのクライアントへ
+# realm マッピングと検証用 rdp ファイルを配る。AD 参加の後に流す必要がある。
+if ($model.kerberos) {
+    Write-Step "Kerberos: KDC プロキシとワークグループ クライアントを構成 (Ansible: configure_kerberos.yml)"
+    & (Join-Path $RepoRoot "control-node\Invoke-Ansible.ps1") -RepoRoot $RepoRoot -Model $Resolved -Playbook "configure_kerberos.yml" -L1Password $GoldenAdminPassword
+    if ($LASTEXITCODE -ne 0) { Fail "Kerberos (KDC プロキシ) の構成に失敗しました。" }
+    $krbClients = @($model.vms | Where-Object { $_.kerberos_client }).Count
+    Write-Ok ("Kerberos 構成完了 (KDC プロキシ: {0} / クライアント {1} 台)" -f $model.kerberos.kdc_proxy.host, $krbClients)
+}
+
 # ---------------------------------------------------------------- 7. クラスタ + S2D
 if ($model.clusters -and $model.clusters.Count -gt 0) {
     Write-Step "L2 上にフェイルオーバークラスタ + S2D を構築 (Ansible: create_cluster.yml)"

@@ -1,0 +1,8 @@
+---
+# KpsSvc が netsh の SSL バインドで使う固定 AppId。Windows の KDC プロキシ用に予約された値で、
+# 任意の GUID を入れると証明書はバインドされてもサービスが拾わない。
+kdcproxy_app_id: "5d8e2743-ef20-4d38-8751-7e400f200e65"
+kdcproxy_cert_store: "Cert:\\LocalMachine\\My"
+# 生成した自己署名証明書を制御 VM 経由でクライアントへ配るための置き場。
+kdcproxy_cert_fetch_dir: "/tmp/hyperv-nestlab-kdcproxy"
+lab_rdp_dir: 'C:\lab\rdp'

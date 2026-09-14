@@ -185,6 +185,26 @@ L1 (ホスト土台) と L2 (中身) を別ファイルにし、L1 は使い回�
 [`schema.md`](schema.md) を参照。パターン C (ハイブリッド: 既定 + count/ip_from の糖衣 +
 overrides エスケープハッチ)。
 
+### Kerberos (KDC プロキシ) の検証ラボ
+
+「クライアント PC がドメインに参加していないと Kerberos は使えない」という説明が広く出回っているが、
+実際には realm から KDC を解決できて KDC に到達できれば成立する。マシンアカウントは要らない。
+`l2/kerberos-kdcproxy.yml` は、それを実験で確かめるための構成。
+
+```powershell
+.\bootstrap.ps1 -L1 l1\standard-host.yml -L2 l2\kerberos-kdcproxy.yml
+```
+
+- `dc01` に KDC プロキシ (KpsSvc) を立て、TCP 443 で Kerberos を DC へ中継する
+- `cli01` はワークグループのまま。DNS は DC を向けず、realm は `ksetup /addkdc` で手動マッピングする
+- `cli01` から DC への **88/tcp・88/udp は塞ぐ**。塞がないと直接 KDC に届いてしまい、
+  「プロキシ経由で成立した」ことを証明できない
+- `C:\lab\rdp` に対照付きの rdp ファイルが 2 つ出る。IP 指定 (NTLM に落ちる) と
+  FQDN + `kdcproxyname` (Kerberos)。手順は同じディレクトリの `VERIFY.txt`
+
+判定は `klist` に `krbtgt/CORP.CONTOSO.LOCAL` が出るかどうかと、接続先の
+NTLM/Operational ログに NTLM の記録が残るかどうかで行う。
+
 ### サンプル
 | ファイル | 内容 | 状態 |
 |---|---|---|
@@ -194,6 +214,7 @@ overrides エスケープハッチ)。
 | `l2/ad-forest.yml` | AD フォレスト dc01 + メンバ mem01 | ✅ 実機検証 |
 | `l2/multi-lang.yml` | ゲスト言語選択のデモ (en / ja の Win + ja の Linux) | ✅ resolve/DryRun |
 | `l2/fileserver-s2d.yml` | AD + 2ノード ファイルサーバクラスタ + S2D | 🚧 ロール足場 |
+| `l2/kerberos-kdcproxy.yml` | AD + KDC プロキシ + ワークグループ機 (非ドメイン参加からの Kerberos 検証) | 🚧 未実機検証 |
 
 最小の例 (`l2/minimal-windows.yml`):
 ```yaml

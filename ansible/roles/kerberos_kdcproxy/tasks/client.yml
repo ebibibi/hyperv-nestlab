@@ -1,0 +1,131 @@
+---
+# ワークグループ (非ドメイン参加) のクライアントを、Kerberos が成立する状態にする。
+#
+# 検証の芯: このマシンはドメインに参加していないので、既定では realm から KDC を引けない。
+# そこを ksetup の手動マッピングで埋め、経路は 443 の KDC プロキシだけを与える。
+# 直接の 88 は block_direct_kdc で塞いであるため、Kerberos が通れば
+# 「プロキシ経由で成立した」以外の説明が付かない。
+- name: "KDC プロキシの証明書を信頼させる"
+  ansible.windows.win_powershell:
+    parameters:
+      CertB64: "{{ lookup('file', kdcproxy_cert_fetch_dir + '/kdcproxy.cer.b64') }}"
+    script: |
+      param([string]$CertB64)
+      $ErrorActionPreference = 'Stop'
+      $path = 'C:\Windows\Temp\kdcproxy.cer'
+      [IO.File]::WriteAllBytes($path, [Convert]::FromBase64String($CertB64))
+      $incoming = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $path
+      if (Get-ChildItem Cert:\LocalMachine\Root | Where-Object Thumbprint -eq $incoming.Thumbprint) {
+          $Ansible.Changed = $false
+      } else {
+          Import-Certificate -FilePath $path -CertStoreLocation Cert:\LocalMachine\Root | Out-Null
+          $Ansible.Changed = $true
+      }
+      $Ansible.Result = $incoming.Thumbprint
+
+- name: "realm -> KDC プロキシ のマッピング (ksetup) と realm フラグ"
+  ansible.windows.win_powershell:
+    parameters:
+      Realm: "{{ kdcproxy_realm }}"
+      ProxyFqdn: "{{ kdcproxy_fqdn }}"
+    script: |
+      param([string]$Realm, [string]$ProxyFqdn)
+      $ErrorActionPreference = 'Stop'
+      $changed = $false
+
+      # ksetup /addkdc は同じ値でも重複追加されるため、現在値を見てから足す。
+      $current = (ksetup /dumpstate) -join "`n"
+      if ($current -notmatch [regex]::Escape($Realm)) {
+          ksetup /addkdc $Realm $ProxyFqdn | Out-Null
+          $changed = $true
+      } elseif ($current -notmatch [regex]::Escape($ProxyFqdn)) {
+          ksetup /addkdc $Realm $ProxyFqdn | Out-Null
+          $changed = $true
+      }
+
+      # KDC プロキシ経由での取得を許可する (ドメイン非参加クライアントの既定では無効)。
+      $key = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Kerberos\Parameters'
+      if (-not (Test-Path $key)) { New-Item $key -Force | Out-Null; $changed = $true }
+      foreach ($pair in @{ KdcProxyEnabled = 1; ClientIpAddressesInSpn = 0 }.GetEnumerator()) {
+          $now = (Get-ItemProperty $key -Name $pair.Key -ErrorAction SilentlyContinue).($pair.Key)
+          if ($now -ne $pair.Value) {
+              New-ItemProperty $key -Name $pair.Key -Value $pair.Value -PropertyType DWord -Force | Out-Null
+              $changed = $true
+          }
+      }
+
+      $Ansible.Changed = $changed
+      $Ansible.Result = ((ksetup /dumpstate) -join "`n")
+  register: ksetup_state
+
+- name: "DC への 88 を塞ぐ (プロキシ経由であることを証明可能にする)"
+  when: block_direct_kdc | default(false)
+  community.windows.win_firewall_rule:
+    name: "hyperv-nestlab block direct KDC ({{ item.protocol }}/88)"
+    remoteip: "{{ kdcproxy_dc_ip }}"
+    localport: any
+    remoteport: 88
+    protocol: "{{ item.protocol }}"
+    action: block
+    direction: out
+    state: present
+    enabled: true
+  loop:
+    - { protocol: tcp }
+    - { protocol: udp }
+
+- name: "検証用 rdp ファイルの置き場"
+  ansible.windows.win_file:
+    path: "{{ lab_rdp_dir }}"
+    state: directory
+
+# 同じ接続先に対して 2 通り作る。この 2 つの差が、そのまま検証結果になる。
+#   -ip   : IP 指定。Windows は IP 宛に Kerberos を試行しないので NTLM に落ちる (対照)
+#   -krb  : FQDN + kdcproxyname。Kerberos が成立するはず (本命)
+- name: "rdp ファイルを生成 (IP 指定 = NTLM に落ちる対照)"
+  when: kdcproxy_target_ip is defined
+  ansible.windows.win_copy:
+    dest: "{{ lab_rdp_dir }}\\{{ kdcproxy_target_name }}-ip.rdp"
+    content: |
+      full address:s:{{ kdcproxy_target_ip }}
+      authentication level:i:2
+      username:s:{{ kdcproxy_netbios }}\Administrator
+      prompt for credentials:i:0
+
+- name: "rdp ファイルを生成 (FQDN + KDC プロキシ = Kerberos 本命)"
+  when: kdcproxy_target_fqdn is defined
+  ansible.windows.win_copy:
+    dest: "{{ lab_rdp_dir }}\\{{ kdcproxy_target_name }}-krb.rdp"
+    content: |
+      full address:s:{{ kdcproxy_target_fqdn }}
+      authentication level:i:2
+      rdgiskdcproxy:i:1
+      kdcproxyname:s:{{ kdcproxy_fqdn }}
+      username:s:Administrator@{{ kdcproxy_realm | lower }}
+      prompt for credentials:i:0
+
+- name: "検証手順を手元に置く"
+  ansible.windows.win_copy:
+    dest: "{{ lab_rdp_dir }}\\VERIFY.txt"
+    content: |
+      非ドメイン参加クライアントから Kerberos が成立するかの検証手順
+
+      前提: この PC はワークグループ。DC ({{ kdcproxy_dc_ip }}) への 88 は塞いである。
+            realm {{ kdcproxy_realm }} の KDC は {{ kdcproxy_fqdn }} (KDC プロキシ / TCP {{ kdcproxy_port }}) だけ。
+
+      1. klist purge
+      2. {{ kdcproxy_target_name }}-ip.rdp で接続する   … IP 指定。NTLM に落ちるのが期待値
+      3. klist                                          … krbtgt のチケットが無いことを確認
+      4. klist purge
+      5. {{ kdcproxy_target_name }}-krb.rdp で接続する  … FQDN + KDC プロキシ
+      6. klist                                          … krbtgt/{{ kdcproxy_realm }} が出れば Kerberos 成立
+      7. 接続先 ({{ kdcproxy_target_name }}) のイベントビューアーで
+         Applications and Services Logs > Microsoft > Windows > NTLM > Operational
+         を開き、2 回の接続で NTLM の記録が 1 回だけであることを確認する
+
+      ログオンは UPN 形式 (Administrator@{{ kdcproxy_realm | lower }}) で行う。
+      DOMAIN\user 形式だと Kerberos にならない事例が報告されている。
+
+- name: "ksetup の realm マッピング結果"
+  ansible.builtin.debug:
+    var: ksetup_state.result

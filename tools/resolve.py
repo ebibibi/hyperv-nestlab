@@ -45,6 +45,7 @@ DEFAULT_OS_DISK_GB = 80
 INHERITABLE = (
     "cpu", "memory_gb", "os", "generation", "domain_join", "disk_gb",
     "language", "features", "applications", "arc", "dns",
+    "kerberos_client", "block_direct_kdc", "ntlm_audit",
 )
 
 # L2 が名前解決に使う既定 DNS。ドメインがある構成では DC を使うのでここには来ない。
@@ -179,6 +180,9 @@ def resolve(l1, l2):
     # 接続先 (サブスクリプション/リソースグループ/リージョン) は L2 宣言に 1 か所だけ書く。
     # 各 VM は arc: true/false で参加を選ぶ。資格情報 (サービスプリンシパル) は宣言に書かず、
     # 非追跡の build/arc-cred.json か bootstrap の引数で渡す (secrets をリポジトリに置かない)。
+    kerberos = copy.deepcopy(l2.get("kerberos")) if l2.get("kerberos") else None
+    if kerberos:
+        kerberos["kdc_proxy"].setdefault("port", 443)
     azure_arc = copy.deepcopy(l2.get("azure_arc")) if l2.get("azure_arc") else None
     if azure_arc:
         agent = dict(ARC_AGENT_DEFAULTS)
@@ -281,6 +285,10 @@ def resolve(l1, l2):
         vm.setdefault("features", [])   # L2 で導入する Windows 機能 (Ansible win_feature)
         vm.setdefault("applications", [])  # L2 で導入するアプリ (Ansible l2_config)
         vm["arc"] = bool(vm.get("arc", False))  # Azure Arc へオンボードするか (Ansible azure_arc)
+        # Kerberos 検証ラボ用のフラグ (Ansible kerberos_kdcproxy)
+        vm["kerberos_client"] = bool(vm.get("kerberos_client", False))
+        vm["block_direct_kdc"] = bool(vm.get("block_direct_kdc", False))
+        vm["ntlm_audit"] = bool(vm.get("ntlm_audit", False))
         if is_linux_os(vm.get("os")):
             vm["base_image_file"] = ubuntu_basename
             vm["locale"] = linux_locales.get(lang, "en_US.UTF-8")
@@ -348,6 +356,7 @@ def resolve(l1, l2):
         },
         "domain": domain,
         "azure_arc": azure_arc,
+        "kerberos": kerberos,
         "vms": vms,
         "clusters": clusters,
         "images_needed": images_needed,
@@ -389,6 +398,35 @@ def semantic_checks(model, subnet, gw):
         )
     if model.get("azure_arc") and not arc_vms:
         errors.append("azure_arc を宣言していますが、arc: true の VM が 1 台もありません")
+
+    # Kerberos (KDC プロキシ) 検証ラボ: 宣言の食い違いを構築前に弾く。
+    krb = model.get("kerberos")
+    krb_clients = [v.get("name") for v in model["vms"] if v.get("kerberos_client")]
+    if krb_clients and not krb:
+        errors.append(
+            "kerberos_client: true の VM ({}) がありますが、トップレベルの kerberos "
+            "(kdc_proxy.host) が宣言されていません".format(", ".join(krb_clients))
+        )
+    if krb:
+        if not krb_clients:
+            errors.append("kerberos を宣言していますが、kerberos_client: true の VM が 1 台もありません")
+        if not model.get("domain"):
+            errors.append("kerberos を宣言していますが、realm の元になる domain がありません")
+        by_name = {v.get("name"): v for v in model["vms"]}
+        proxy_name = krb["kdc_proxy"]["host"]
+        proxy = by_name.get(proxy_name)
+        if proxy is None:
+            errors.append(f"kerberos.kdc_proxy.host が未定義の VM {proxy_name} を指しています")
+        target_name = krb.get("rdp_target")
+        if target_name is not None and target_name not in by_name:
+            errors.append(f"kerberos.rdp_target が未定義の VM {target_name} を指しています")
+        # ワークグループのクライアントから検証する構成なので、参加済みだと検証にならない。
+        for name in krb_clients:
+            if by_name[name].get("domain_join"):
+                errors.append(
+                    f"kerberos_client の {name} がドメイン参加になっています。"
+                    "非ドメイン参加からの Kerberos を検証する構成なので domain_join: false にしてください"
+                )
 
     node_set = set(seen_names)
     for cl in model["clusters"]:
