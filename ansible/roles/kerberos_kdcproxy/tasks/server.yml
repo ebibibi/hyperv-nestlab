@@ -37,6 +37,54 @@
       $Ansible.Result = @{ thumbprint = $cert.Thumbprint; subject = $cert.Subject }
   register: kdcproxy_cert
 
+- name: "https://+:443/KdcProxy の URL 予約を NETWORK SERVICE に与える"
+  # KPSSVC は svchost -k KpsSvcGroup の NETWORK SERVICE で動く。RD ゲートウェイ役割を入れずに
+  # 単体で立てると HTTP.SYS の URL 予約が無く、証明書を 443 にバインドしてあっても
+  # サービスは「アクセスが拒否されました」(システムログ 7023) で即停止する。
+  # netsh の出力は言語依存なので、既存判定は show urlacl のマッチで行う。
+  ansible.windows.win_powershell:
+    parameters:
+      Port: "{{ kdcproxy_port | int }}"
+    script: |
+      param([int]$Port)
+      $ErrorActionPreference = 'Stop'
+      $url = "https://+:$Port/KdcProxy"
+      $existing = (netsh http show urlacl url=$url | Out-String)
+      if ($existing -match [regex]::Escape($url)) {
+          $Ansible.Changed = $false
+      } else {
+          # ローカライズ環境でも確実に解決するため SID から名前を引く (S-1-5-20 = NETWORK SERVICE)。
+          $acct = (New-Object System.Security.Principal.SecurityIdentifier('S-1-5-20')).Translate([System.Security.Principal.NTAccount]).Value
+          netsh http add urlacl url=$url user="$acct" | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "netsh add urlacl が失敗しました (exit $LASTEXITCODE)" }
+          $Ansible.Changed = $true
+      }
+      $Ansible.Result = (netsh http show urlacl url=$url | Out-String)
+  register: kps_urlacl
+
+- name: "証明書の秘密鍵を NETWORK SERVICE が読めるようにする"
+  # New-SelfSignedCertificate は SYSTEM / Administrators にしか鍵の ACL を与えない。
+  ansible.windows.win_powershell:
+    parameters:
+      Thumbprint: "{{ kdcproxy_cert.result.thumbprint }}"
+    script: |
+      param([string]$Thumbprint)
+      $ErrorActionPreference = 'Stop'
+      $cert = Get-Item "Cert:\LocalMachine\My\$Thumbprint"
+      $name = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($cert).Key.UniqueName
+      $path = Join-Path $env:ProgramData "Microsoft\Crypto\Keys\$name"
+      if (-not (Test-Path $path)) { throw "秘密鍵ファイルが見つかりません: $path" }
+      $acct = (New-Object System.Security.Principal.SecurityIdentifier('S-1-5-20')).Translate([System.Security.Principal.NTAccount]).Value
+      $acl = Get-Acl $path
+      if ($acl.Access | Where-Object { $_.IdentityReference.Value -eq $acct -and $_.FileSystemRights -match 'Read' }) {
+          $Ansible.Changed = $false
+      } else {
+          $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($acct, 'Read', 'Allow')))
+          Set-Acl $path $acl
+          $Ansible.Changed = $true
+      }
+      $Ansible.Result = $path
+
 - name: "KpsSvc の設定 (HttpsClientAuth)"
   ansible.windows.win_regedit:
     path: HKLM:\SYSTEM\CurrentControlSet\Services\KPSSVC\Settings
