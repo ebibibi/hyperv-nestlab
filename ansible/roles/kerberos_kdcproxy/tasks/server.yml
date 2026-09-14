@@ -48,18 +48,24 @@
     script: |
       param([int]$Port)
       $ErrorActionPreference = 'Stop'
-      $url = "https://+:$Port/KdcProxy"
-      $existing = (netsh http show urlacl url=$url | Out-String)
-      if ($existing -match [regex]::Escape($url)) {
+      # HTTP.SYS は予約を末尾スラッシュ付きで保持する。スラッシュ無しで show すると
+      # 既存でも何も返らないため、存在判定は一覧を引いて文字列一致で行う。
+      $url = "https://+:$Port/KdcProxy/"
+      $all = (netsh http show urlacl | Out-String)
+      if ($all -match [regex]::Escape($url)) {
           $Ansible.Changed = $false
       } else {
           # ローカライズ環境でも確実に解決するため SID から名前を引く (S-1-5-20 = NETWORK SERVICE)。
           $acct = (New-Object System.Security.Principal.SecurityIdentifier('S-1-5-20')).Translate([System.Security.Principal.NTAccount]).Value
-          netsh http add urlacl url=$url user="$acct" | Out-Null
-          if ($LASTEXITCODE -ne 0) { throw "netsh add urlacl が失敗しました (exit $LASTEXITCODE)" }
+          $out = (netsh http add urlacl url=$url user="$acct" | Out-String)
+          # 競合で先に作られていた場合は成功とみなす (再実行で落とさない)。
+          $after = (netsh http show urlacl | Out-String)
+          if ($after -notmatch [regex]::Escape($url)) {
+              throw "netsh add urlacl が失敗しました (exit $LASTEXITCODE): $out"
+          }
           $Ansible.Changed = $true
       }
-      $Ansible.Result = (netsh http show urlacl url=$url | Out-String)
+      $Ansible.Result = $url
   register: kps_urlacl
 
 - name: "証明書の秘密鍵を NETWORK SERVICE が読めるようにする"

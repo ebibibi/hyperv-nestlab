@@ -52,6 +52,10 @@ Start-Service KPSSVC
 アカウント名は SID `S-1-5-20` から引く。`"NT AUTHORITY\NETWORK SERVICE"` と直書きすると
 英語以外のロケールで解決に失敗することがある。
 
+**存在判定は末尾スラッシュ付きで行う。** HTTP.SYS は予約を `https://+:443/KdcProxy/` の形で保持するため、
+`netsh http show urlacl url=https://+:443/KdcProxy`（スラッシュ無し）は予約済みでも何も返さない。
+これを「未登録」と誤判定して `add` すると exit 1 で落ちる。一覧を引いて文字列一致させるのが確実。
+
 本リポジトリでは `ansible/roles/kerberos_kdcproxy/tasks/server.yml` が冪等に実施する。
 
 ## 確認
