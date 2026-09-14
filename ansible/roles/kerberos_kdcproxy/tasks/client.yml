@@ -23,6 +23,20 @@
       }
       $Ansible.Result = $incoming.Thumbprint
 
+# 実環境では踏み台やプロキシの FQDN は公開 DNS で引ける。このラボはクライアントの DNS を
+# 意図的に DC から外しているので、名前解決だけ hosts で代替する。
+# hosts には SRV レコードが無いため、「realm -> KDC は ksetup の手動マッピングだけ」という
+# 検証の前提は保たれる (DNS 由来で KDC を見つけてしまうことはない)。
+- name: "接続先と KDC プロキシの名前解決を hosts で与える"
+  ansible.windows.win_hosts:
+    state: present
+    canonical_name: "{{ item.name }}"
+    ip_address: "{{ item.ip }}"
+  loop:
+    - { name: "{{ kdcproxy_fqdn }}", ip: "{{ kdcproxy_dc_ip }}" }
+    - { name: "{{ kdcproxy_target_fqdn }}", ip: "{{ kdcproxy_target_ip }}" }
+  when: item.ip | length > 0
+
 - name: "realm -> KDC プロキシ のマッピング (ksetup) と realm フラグ"
   ansible.windows.win_powershell:
     parameters:
