@@ -28,7 +28,7 @@
 # hosts には SRV レコードが無いため、「realm -> KDC は ksetup の手動マッピングだけ」という
 # 検証の前提は保たれる (DNS 由来で KDC を見つけてしまうことはない)。
 - name: "接続先と KDC プロキシの名前解決を hosts で与える"
-  ansible.windows.win_hosts:
+  community.windows.win_hosts:
     state: present
     canonical_name: "{{ item.name }}"
     ip_address: "{{ item.ip }}"
