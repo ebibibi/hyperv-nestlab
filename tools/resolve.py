@@ -45,7 +45,7 @@ DEFAULT_OS_DISK_GB = 80
 INHERITABLE = (
     "cpu", "memory_gb", "os", "generation", "domain_join", "disk_gb",
     "language", "features", "applications", "arc", "dns",
-    "kerberos_client", "block_direct_kdc", "ntlm_audit",
+    "kerberos_client", "block_direct_kdc", "ntlm_audit", "kerberos_debug", "smb_share",
 )
 
 # L2 が名前解決に使う既定 DNS。ドメインがある構成では DC を使うのでここには来ない。
@@ -289,6 +289,7 @@ def resolve(l1, l2):
         vm["kerberos_client"] = bool(vm.get("kerberos_client", False))
         vm["block_direct_kdc"] = bool(vm.get("block_direct_kdc", False))
         vm["ntlm_audit"] = bool(vm.get("ntlm_audit", False))
+        vm["kerberos_debug"] = bool(vm.get("kerberos_debug", False))
         if is_linux_os(vm.get("os")):
             vm["base_image_file"] = ubuntu_basename
             vm["locale"] = linux_locales.get(lang, "en_US.UTF-8")

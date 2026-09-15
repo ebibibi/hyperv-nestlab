@@ -214,7 +214,8 @@ NTLM/Operational ログに NTLM の記録が残るかどうかで行う。
 | `l2/ad-forest.yml` | AD フォレスト dc01 + メンバ mem01 | ✅ 実機検証 |
 | `l2/multi-lang.yml` | ゲスト言語選択のデモ (en / ja の Win + ja の Linux) | ✅ resolve/DryRun |
 | `l2/fileserver-s2d.yml` | AD + 2ノード ファイルサーバクラスタ + S2D | 🚧 ロール足場 |
-| `l2/kerberos-kdcproxy.yml` | AD + KDC プロキシ + ワークグループ機 (非ドメイン参加からの Kerberos 検証) | 🚧 未実機検証 |
+| `l2/kerberos-nonjoined.yml` | AD + ファイルサーバー + ワークグループ機 (非ドメイン参加から Kerberos が使えるかの検証) | 🚧 検証中 |
+| `l2/kerberos-kdcproxy.yml` | 上記に KDC プロキシと妨害 (88遮断) を足した派生 | 🚧 未決着 |
 
 最小の例 (`l2/minimal-windows.yml`):
 ```yaml

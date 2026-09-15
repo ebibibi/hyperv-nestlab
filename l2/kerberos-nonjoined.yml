@@ -1,0 +1,56 @@
+# 「ドメインに参加していないクライアントから Kerberos 認証はできるのか」を確かめるラボ。
+#
+# 世間では「ワークグループのクライアントはコンピューターアカウントも信頼関係も無いので
+# Kerberos チケットを要求も受領もできない」と説明されることが多い。これを実機で検証する。
+#
+# 妨害は一切入れない素の構成にする。クライアントは DC に普通に到達でき、DNS も DC を向く。
+# つまり「いつでもドメイン参加できる状態だが、あえて参加していない」端末を再現する。
+#
+# 構成:
+#   dc01  10.10.0.10  DC + DNS
+#   srv01 10.10.0.21  ファイルサーバー (検証用の共有 labshare を持つ)
+#   cli01 10.10.0.40  ワークグループのクライアント (DNS は dc01)
+#
+# 計測点は 2 つに固定する:
+#   1. dc01 の 4768 / 4769  … クライアントにチケットが払い出されたか
+#   2. srv01 の 4624 の認証パッケージ … 実際に成立した認証が Kerberos か NTLM か
+#
+# 注: dsrm_password は本来 vault 管理だが、自己完結ラボのデモのため具体値を置く。
+defaults:
+  cpu: 2
+  memory_gb: 8
+  os: windows_server_2025
+  domain_join: corp.contoso.local
+
+domain:
+  fqdn: corp.contoso.local
+  netbios: CORP
+  dsrm_password: "P@ssw0rd-DSRM-Lab!"
+  dns_forwarders: [1.1.1.1, 8.8.8.8]
+  controllers:
+    - { name: dc01, ip: 10.10.0.10 }
+
+groups:
+  - name: fileservers
+    name_prefix: srv
+    count: 1
+    ip_from: 10.10.0.21
+    # 検証用の共有。IPC$ や C$ のような特殊な共有で測ると挙動が紛れる。
+    smb_share: labshare
+    # 受信側で NTLM 監査を有効にし、NTLM に落ちた事実をログに残す。
+    ntlm_audit: true
+
+  - name: workstations
+    name_prefix: cli
+    count: 1
+    ip_from: 10.10.0.40
+    cpu: 4
+    memory_gb: 8
+    # ここが検証の芯。参加できる状態にあるが参加しない。
+    domain_join: false
+    # DNS は DC を向ける（SRV レコードで KDC を引ける＝素の状態）。
+    dns: [10.10.0.10]
+    # クライアント側の Kerberos エラーを System ログへ出す。
+    # 「チケットはあるのに使われない」の理由はここにしか出ない。
+    kerberos_debug: true
+    ntlm_audit: true

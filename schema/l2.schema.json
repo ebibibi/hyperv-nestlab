@@ -73,6 +73,10 @@
           "applications": { "$ref": "#/$defs/applications" },
           "arc": { "type": "boolean" },
           "kerberos_client": { "type": "boolean" },
+        "kerberos_debug": { "type": "boolean" },
+        "smb_share": { "type": "string", "minLength": 1 },
+          "kerberos_debug": { "type": "boolean" },
+          "smb_share": { "type": "string", "minLength": 1 },
           "block_direct_kdc": { "type": "boolean" },
           "ntlm_audit": { "type": "boolean" },
           "dns": { "$ref": "#/$defs/dnsServers" },
@@ -157,6 +161,8 @@
         "applications": { "$ref": "#/$defs/applications" },
         "arc": { "type": "boolean" },
         "kerberos_client": { "type": "boolean" },
+        "kerberos_debug": { "type": "boolean" },
+        "smb_share": { "type": "string", "minLength": 1 },
         "block_direct_kdc": { "type": "boolean" },
         "ntlm_audit": { "type": "boolean" },
         "dns": { "$ref": "#/$defs/dnsServers" }
@@ -215,6 +221,8 @@
         "applications": { "$ref": "#/$defs/applications" },
         "arc": { "type": "boolean" },
         "kerberos_client": { "type": "boolean" },
+        "kerberos_debug": { "type": "boolean" },
+        "smb_share": { "type": "string", "minLength": 1 },
         "block_direct_kdc": { "type": "boolean" },
         "ntlm_audit": { "type": "boolean" },
         "dns": { "$ref": "#/$defs/dnsServers" }
@@ -239,6 +247,8 @@
         "applications": { "$ref": "#/$defs/applications" },
         "arc": { "type": "boolean" },
         "kerberos_client": { "type": "boolean" },
+        "kerberos_debug": { "type": "boolean" },
+        "smb_share": { "type": "string", "minLength": 1 },
         "block_direct_kdc": { "type": "boolean" },
         "ntlm_audit": { "type": "boolean" },
         "dns": { "$ref": "#/$defs/dnsServers" }
