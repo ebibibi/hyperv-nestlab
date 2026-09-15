@@ -429,9 +429,21 @@ if ($LASTEXITCODE -ne 0) { Fail "Windows共通ベースラインの構成に失�
 Write-Ok "Windows共通ベースライン構成完了"
 
 # ---------------------------------------------------------------- 6b. L2 OS内構成 (features / IIS 等)
-# 宣言ファイルで features を持つ Windows L2 があれば Ansible(制御VM->WinRM) で機能導入する。
+# 宣言ファイルで OS 内構成を要求する Windows L2 があれば Ansible(制御VM->WinRM) で適用する。
 # AD 参加後に走るので、ドメインサービスアカウント等を前提にした構成にも続けられる。
-if ($model.vms | Where-Object { ($_.os -notmatch 'ubuntu|debian|linux') -and ($_.features) -and (@($_.features).Count -gt 0) }) {
+#
+# 条件は l2_config ロールが扱う項目すべてを見る。features だけを見ていると、
+# applications や smb_share だけを宣言したモデルが無言でスキップされる。
+$needsL2Config = $model.vms | Where-Object {
+    ($_.os -notmatch 'ubuntu|debian|linux') -and (
+        (@($_.features).Count -gt 0) -or
+        (@($_.applications).Count -gt 0) -or
+        ($_.smb_share) -or
+        ($_.ntlm_audit) -or
+        ($_.kerberos_debug)
+    )
+}
+if ($needsL2Config) {
     # ドメインがある構成では、メンバーへの WinRM は IP+NTLM では拒否される (KB/0019)。
     # configure_l2 の前に制御 VM を Kerberos 設定し、FQDN+Kerberos で届くようにする
     # (ドメインが無ければ Ensure-ControlKerberos.ps1 は自分でスキップする)。
