@@ -291,3 +291,34 @@ def test_kerberos_proxy_host_must_exist(tmp_path):
     with pytest.raises(resolve.ConfigError) as e:
         build(bad)
     assert "nosuch" in str(e.value)
+
+
+# ---------------- 非ドメイン参加クライアントの Kerberos 検証ラボ ----------------
+
+def test_nonjoined_lab_has_a_workgroup_client_that_can_reach_the_dc():
+    m = build(REPO / "l2" / "kerberos-nonjoined.yml")
+    cli = next(v for v in m["vms"] if v["name"] == "cli01")
+    # 参加していないこと、かつ DC を引けること。両方そろって初めて検証になる。
+    assert cli["domain_join"] is False
+    assert cli["nics"][0]["dns"] == ["10.10.0.10"]
+    # 妨害は入れない
+    assert cli["block_direct_kdc"] is False
+    assert m["kerberos"] is None
+
+
+def test_nonjoined_lab_declares_a_real_share_not_an_admin_share():
+    m = build(REPO / "l2" / "kerberos-nonjoined.yml")
+    srv = next(v for v in m["vms"] if v["name"] == "srv01")
+    assert srv["smb_share"] == "labshare"
+    assert srv["ntlm_audit"] is True
+
+
+def test_kerberos_debug_is_on_for_the_client_only():
+    m = build(REPO / "l2" / "kerberos-nonjoined.yml")
+    on = [v["name"] for v in m["vms"] if v["kerberos_debug"]]
+    assert on == ["cli01"]
+
+
+def test_kerberos_debug_defaults_to_false():
+    m = build(REPO / "l2" / "ad-forest.yml")
+    assert all(v["kerberos_debug"] is False for v in m["vms"])
