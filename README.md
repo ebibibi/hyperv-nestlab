@@ -89,6 +89,9 @@ L0  物理 Hyper-V ホスト  ── あなたが用意する唯一の前提
 .\bootstrap.ps1 -L1 l1\standard-host.yml -L2 l2\ad-forest.yml
 ```
 
+既存フォレストを**単一フォレスト・複数ドメイン・各ドメイン複数 DC**へ拡張する手順は
+[`docs/multi-domain-ad-lab.md`](docs/multi-domain-ad-lab.md) を参照してください。
+
 `bootstrap.ps1` の流れ:
 1. プリフライト (Hyper-V / Python / 設定ファイル)
 2. 検証 + 解決 (`tools/resolve.py` → `build/resolved.json`)
