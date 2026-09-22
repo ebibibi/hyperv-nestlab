@@ -49,3 +49,4 @@ Windows golden / S2D まわりの**汎用ノウハウ集**でもあります。
 | [0027](0027-run-bootstrap-over-ssh.md) | bootstrap を SSH 越し(非対話)で流すと無限ハング/途中で死ぬ | ssh は stdin を読む・SSHセッション終了で子が死ぬ・SYSTEMからは user配下のPythonが見えない |
 | [0028](0028-kdc-proxy-needs-urlacl.md) | KDC プロキシ (KpsSvc) が「アクセスが拒否されました」(7023) で即停止 | 証明書バインドは正しくても `https://+:443/KdcProxy` の urlacl が無い。RD ゲートウェイ役割を入れないと作られない |
 | [0029](0029-configure-l2-guard-skips-silently.md) | 宣言した OS 内構成が適用されない (bootstrap は成功) | 6b フェーズのガードが features しか見ておらず、applications / smb_share だけのモデルは playbook ごとスキップ |
+| [0030](0030-child-domain-promotion-needs-upn-credential.md) | Workgroup からの子ドメイン昇格で資格情報検証に失敗 | NetBIOS名でなく親ドメインのUPNを使う |
