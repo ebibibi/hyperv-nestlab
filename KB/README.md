@@ -50,3 +50,4 @@ Windows golden / S2D まわりの**汎用ノウハウ集**でもあります。
 | [0028](0028-kdc-proxy-needs-urlacl.md) | KDC プロキシ (KpsSvc) が「アクセスが拒否されました」(7023) で即停止 | 証明書バインドは正しくても `https://+:443/KdcProxy` の urlacl が無い。RD ゲートウェイ役割を入れないと作られない |
 | [0029](0029-configure-l2-guard-skips-silently.md) | 宣言した OS 内構成が適用されない (bootstrap は成功) | 6b フェーズのガードが features しか見ておらず、applications / smb_share だけのモデルは playbook ごとスキップ |
 | [0030](0030-child-domain-promotion-needs-upn-credential.md) | Workgroup からの子ドメイン昇格で資格情報検証に失敗 | NetBIOS名でなく親ドメインのUPNを使う |
+| [0031](0031-capture-guest-screen-from-host.md) | ホストから L2 の画面を撮ると真っ黒 / L2 に届かない | 画面の消灯を仮想キーボードで起こす・WMI は VM を持つホスト(L1)で呼ぶ・RGB565 は LockBits で行コピー |
