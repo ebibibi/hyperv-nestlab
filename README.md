@@ -257,6 +257,8 @@ groups:
 | `scripts/Copy-GoldenToL1.ps1` | golden/ベースを L1 へ Copy-VMFile 配送 |
 | `scripts/Publish-L2Seeds.ps1` | Linux L2 の cloud-init シードを生成・配送 |
 | `scripts/Initialize-AdForest.ps1` | L2 上に AD フォレスト構築 + ドメイン参加 |
+| `scripts/Get-VmScreenshot.ps1` | L1 / L2（`-L1`）のコンソール画面を PNG で取得。ゲストに何も入れない。`-Wake` で消灯から復帰、`-Count` で連続撮影（[KB/0031](KB/0031-capture-guest-screen-from-host.md)） |
+| `scripts/Send-VmKeys.ps1` | 仮想キーボードで Ctrl+Alt+Del・文字・キー（`Win+R` 等）を送る。サインイン画面や GUI の操作に |
 | `control-node/Ensure-ControlNode.ps1` | Ansible 内蔵 制御 VM を構築 |
 | `control-node/Invoke-Ansible.ps1` | 制御 VM へ同期し playbook 実行 |
 | `ansible/` | 動的インベントリ + ロール (nested_host / l1_network / l2_vm / ad / cluster_s2d / azure_local) |
