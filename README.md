@@ -297,3 +297,9 @@ python tools/resolve.py --l1 l1/standard-host.yml --l2 l2/ad-forest.yml --valida
 - 🚧 クラスタ + S2D (ロール足場) / Azure Local (別管理ロールで OSS ラップ) / GUI
 
 進捗の詳細は [`plan.md`](plan.md) を参照。
+
+---
+
+## ライセンス
+
+[Apache License 2.0](LICENSE)
