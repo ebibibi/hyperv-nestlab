@@ -30,6 +30,9 @@
 param(
     [string]$ModelPath,
     [string]$ControlNodeName = "nested-lab-ctrl",
+    # L0 switch of the control network (control-node/Ensure-ControlNode.ps1). Not l1.nat.switch,
+    # which is the NAT switch inside the L1 and does not exist on L0.
+    [string]$SwitchName = "CtrlNAT",
     [switch]$KeepControlNode,
     [switch]$IncludeSwitch,
     [switch]$IncludeBuild,
@@ -44,11 +47,10 @@ function Log($m){ Write-Host "  [teardown] $m" -ForegroundColor DarkCyan }
 if (-not $ModelPath) { $ModelPath = Join-Path $RepoRoot "build\resolved.json" }
 
 # resolved.json から L1 名 / スイッチ名 / L2 名を取得 (無ければ既定にフォールバック)
-$l1Name = $null; $switchName = "CtrlNAT"; $l2Names = @()
+$l1Name = $null; $switchName = $SwitchName; $l2Names = @()
 if (Test-Path $ModelPath) {
     $m = Get-Content $ModelPath -Raw | ConvertFrom-Json
     $l1Name = $m.l1.name
-    if ($m.l1.nat.switch) { $switchName = $m.l1.nat.switch }
     $l2Names = @($m.vms | ForEach-Object { $_.name })
 } else {
     Log "resolved.json が見つかりません ($ModelPath)。L1 名は -ModelPath で渡すか、build を残してください。"
