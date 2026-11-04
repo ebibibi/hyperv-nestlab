@@ -61,3 +61,9 @@ def test_bootstrap_runs_l2_config_for_windows_11_and_updates():
     script = (Path(__file__).resolve().parent.parent / "bootstrap.ps1").read_text(encoding="utf-8")
     gate = script[script.index("$needsL2Config = "):script.index("if ($needsL2Config)")]
     assert "windows_update" in gate and "windows_11" in gate
+
+
+def test_windows_update_retries_after_reboot_failures():
+    tasks = (Path(__file__).resolve().parent.parent / "ansible" / "roles" / "l2_config" / "tasks" / "main.yml").read_text(encoding="utf-8")
+    section = tasks[tasks.index("win_updates"):tasks.index("適用した更新の件数")]
+    assert "until:" in section and "retries:" in section

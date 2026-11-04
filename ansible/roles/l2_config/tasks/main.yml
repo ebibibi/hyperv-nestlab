@@ -49,6 +49,11 @@
     reboot: true
     reboot_timeout: 3600
   register: l2_updates
+  # The module can fail with "Connection refused" while the guest reboots through the L1 NAT, even
+  # though the updates were installed (KB/0034). A retry finds what is left and confirms the result.
+  until: l2_updates is succeeded and (l2_updates.failed_update_count | default(0)) == 0
+  retries: 5
+  delay: 180
 
 - name: "適用した更新の件数"
   when: windows_update | default(false) | bool
