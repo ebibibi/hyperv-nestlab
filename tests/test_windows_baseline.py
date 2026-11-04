@@ -55,3 +55,9 @@ def test_windows_11_evaluation_is_activated_before_updates():
 def test_winrm_is_not_left_on_delayed_start():
     script = (Path(__file__).resolve().parent.parent / "scripts" / "Initialize-L2Access.ps1").read_text(encoding="utf-8")
     assert script.index("Enable-PSRemoting") < script.index("sc.exe config WinRM start= auto")
+
+
+def test_bootstrap_runs_l2_config_for_windows_11_and_updates():
+    script = (Path(__file__).resolve().parent.parent / "bootstrap.ps1").read_text(encoding="utf-8")
+    gate = script[script.index("$needsL2Config = "):script.index("if ($needsL2Config)")]
+    assert "windows_update" in gate and "windows_11" in gate

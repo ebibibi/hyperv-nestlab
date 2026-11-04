@@ -444,7 +444,9 @@ $needsL2Config = $model.vms | Where-Object {
         (@($_.applications).Count -gt 0) -or
         ($_.smb_share) -or
         ($_.ntlm_audit) -or
-        ($_.kerberos_debug)
+        ($_.kerberos_debug) -or
+        ($_.windows_update) -or
+        ($_.os -match '^windows_11')
     )
 }
 if ($needsL2Config) {
