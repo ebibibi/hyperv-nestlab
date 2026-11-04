@@ -107,6 +107,9 @@ try {
                     # WinRM + FW + ローカル管理者のリモートトークン
                     Set-Service WinRM -StartupType Automatic; if ((Get-Service WinRM).Status -ne 'Running'){ Start-Service WinRM }
                     Enable-PSRemoting -Force -SkipNetworkProfileCheck | Out-Null
+                    # Enable-PSRemoting leaves WinRM on delayed start on Windows 11, so it is unreachable for
+                    # about two minutes after every boot and Ansible fails with UNREACHABLE (KB/0033).
+                    sc.exe config WinRM start= auto | Out-Null
                     if (-not (Get-NetFirewallRule -Name 'NestedLab-WinRM-In' -EA SilentlyContinue)) {
                         New-NetFirewallRule -Name 'NestedLab-WinRM-In' -DisplayName 'NestedLab WinRM' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 5985 -Profile Any | Out-Null
                     }

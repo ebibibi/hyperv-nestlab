@@ -52,3 +52,4 @@ Windows golden / S2D まわりの**汎用ノウハウ集**でもあります。
 | [0030](0030-child-domain-promotion-needs-upn-credential.md) | Workgroup からの子ドメイン昇格で資格情報検証に失敗 | NetBIOS名でなく親ドメインのUPNを使う |
 | [0031](0031-capture-guest-screen-from-host.md) | ホストから L2 の画面を撮ると真っ黒 / L2 に届かない | 画面の消灯を仮想キーボードで起こす・WMI は VM を持つホスト(L1)で呼ぶ・RGB565 は LockBits で行コピー |
 | [0032](0032-image-bcdboot-fails-on-host.md) | Windows 11 イメージの bcdboot がホスト上で失敗する | イメージ側が失敗したらホスト側の bcdboot で構成する |
+| [0033](0033-windows-11-eval-activation-and-winrm.md) | Windows 11 評価版が 1 時間で落ち、WinRM にも届かない | 構成の最初に `slmgr /ato`、WinRM は遅延なしの自動起動にする |

@@ -10,6 +10,24 @@
 #   applications: [claude_code, microsoft_word]
 # と書けば、対応するアプリを存在確認付きで冪等導入する。
 
+# The evaluation edition is not activated by itself in time: once the grace period ends, wlms.exe
+# shuts the guest down every hour (KB/0033). Activate before anything long-running such as updates.
+- name: "Windows 11 評価版をライセンス認証"
+  when: (os | default('')) is match('^windows_11')
+  ansible.windows.win_powershell:
+    error_action: stop
+    script: |
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      function Get-LicenseStatus {
+        (Get-CimInstance SoftwareLicensingProduct -Filter "PartialProductKey IS NOT NULL AND Name LIKE 'Windows%'" |
+          Select-Object -First 1).LicenseStatus
+      }
+      if ((Get-LicenseStatus) -eq 1) { return }
+      $output = & cscript.exe //nologo "$env:SystemRoot\System32\slmgr.vbs" /ato | Out-String
+      if ((Get-LicenseStatus) -ne 1) { throw "Windows activation failed: $output" }
+      $Ansible.Changed = $true
+
 - name: "L2 機能の導入: {{ (features | default([])) | join(', ') }}"
   when: (features | default([])) | length > 0
   ansible.windows.win_feature:

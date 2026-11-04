@@ -44,3 +44,14 @@ def test_golden_builder_falls_back_to_host_bcdboot():
     image = script.index('"W:\\Windows\\System32\\bcdboot.exe"')
     host = script.index('"$env:SystemRoot\\System32\\bcdboot.exe"')
     assert image < host
+
+
+def test_windows_11_evaluation_is_activated_before_updates():
+    tasks = (Path(__file__).resolve().parent.parent / "ansible" / "roles" / "l2_config" / "tasks" / "main.yml").read_text(encoding="utf-8")
+    assert "/ato" in tasks
+    assert tasks.index("/ato") < tasks.index("win_updates")
+
+
+def test_winrm_is_not_left_on_delayed_start():
+    script = (Path(__file__).resolve().parent.parent / "scripts" / "Initialize-L2Access.ps1").read_text(encoding="utf-8")
+    assert script.index("Enable-PSRemoting") < script.index("sc.exe config WinRM start= auto")
