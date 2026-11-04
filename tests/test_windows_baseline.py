@@ -37,3 +37,10 @@ def test_powershell_is_installed_with_latest_winget_package():
 def test_bootstrap_always_runs_windows_baseline():
     bootstrap = (REPO / "bootstrap.ps1").read_text(encoding="utf-8")
     assert '-Playbook "configure_windows_baseline.yml"' in bootstrap
+
+
+def test_golden_builder_falls_back_to_host_bcdboot():
+    script = (Path(__file__).resolve().parent.parent / "scripts" / "Build-WindowsGoldenDism.ps1").read_text(encoding="utf-8")
+    image = script.index('"W:\\Windows\\System32\\bcdboot.exe"')
+    host = script.index('"$env:SystemRoot\\System32\\bcdboot.exe"')
+    assert image < host

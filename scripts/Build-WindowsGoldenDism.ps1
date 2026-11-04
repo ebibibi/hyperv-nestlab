@@ -120,8 +120,13 @@ try {
 
     # --- UEFI ブート構成 ---
     Log "bcdboot で UEFI ブート構成"
-    & "W:\Windows\System32\bcdboot.exe" W:\Windows /s S: /f UEFI
-    if ($LASTEXITCODE -ne 0) { throw "bcdboot に失敗しました。" }
+    # イメージ側の bcdboot がホスト上で起動できない版がある (KB/0032)。その場合はホスト側で構成する。
+    $bootOut = & "W:\Windows\System32\bcdboot.exe" W:\Windows /s S: /f UEFI 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Log ("イメージ側の bcdboot が失敗 (rc={0})。ホスト側の bcdboot で再試行します" -f $LASTEXITCODE)
+        $bootOut = & "$env:SystemRoot\System32\bcdboot.exe" W:\Windows /s S: /f UEFI 2>&1
+        if ($LASTEXITCODE -ne 0) { throw "bcdboot に失敗しました (rc=$LASTEXITCODE): $($bootOut -join ' ')" }
+    }
 
     # --- unattend 配置 (OOBE 無人 + WinRM) ---
     $unattendSrc = if ($UnattendPath) { Join-Path $RepoRoot $UnattendPath } else { Join-Path $RepoRoot "packer\windows-server\unattend-golden.xml" }
