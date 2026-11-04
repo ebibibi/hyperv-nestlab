@@ -23,6 +23,20 @@
   ansible.windows.win_reboot:
     reboot_timeout: 1200
 
+- name: "Windows Update を適用 (windows_update: true)"
+  when: windows_update | default(false) | bool
+  ansible.windows.win_updates:
+    category_names: [SecurityUpdates, CriticalUpdates, UpdateRollups, Updates]
+    reject_list: ['(?i)preview']
+    reboot: true
+    reboot_timeout: 3600
+  register: l2_updates
+
+- name: "適用した更新の件数"
+  when: windows_update | default(false) | bool
+  ansible.builtin.debug:
+    msg: "{{ inventory_hostname }}: installed={{ l2_updates.installed_update_count | default(0) }} failed={{ l2_updates.failed_update_count | default(0) }}"
+
 - name: "Claude Code stable を現在のドメイン管理者プロファイルへ導入"
   when: "'claude_code' in (applications | default([]))"
   ansible.windows.win_powershell:

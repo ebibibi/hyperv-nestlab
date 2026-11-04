@@ -322,3 +322,66 @@ def test_kerberos_debug_is_on_for_the_client_only():
 def test_kerberos_debug_defaults_to_false():
     m = build(REPO / "l2" / "ad-forest.yml")
     assert all(v["kerberos_debug"] is False for v in m["vms"])
+
+
+# ---------------- Windows 11 L2 ----------------
+
+def _client_l2(**client):
+    spec = {
+        "defaults": {"os": "windows_server_2025", "domain_join": "corp.contoso.local"},
+        "domain": {
+            "fqdn": "corp.contoso.local",
+            "netbios": "CORP",
+            "dsrm_password": "x",
+            "controllers": [{"name": "dc01", "ip": "10.10.0.10"}],
+        },
+        "groups": [
+            {"name": "c", "name_prefix": "pc", "count": 1, "ip_from": "10.10.0.21", "os": "windows_11", **client}
+        ],
+    }
+    return spec
+
+
+def _resolve_dict(l2):
+    return resolve.resolve(resolve.load_yaml(L1), l2)
+
+
+def test_windows_11_recipe_uses_client_golden_per_language():
+    m = build(REPO / "l2" / "entra-hybrid-join.yml")
+    vms = {v["name"]: v for v in m["vms"]}
+    assert vms["dc01"]["base_image_file"] == "win2025-golden-en-us.vhdx"
+    assert vms["pc01"]["base_image_file"] == "win11-golden-ja-jp.vhdx"
+    assert vms["pc02"]["windows_update"] is True
+
+
+def test_windows_11_image_carries_builder_settings():
+    m = build(REPO / "l2" / "entra-hybrid-join.yml")
+    client = next(i for i in m["images_needed"] if i.get("golden_file") == "win11-golden-ja-jp.vhdx")
+    assert client["iso_name"] == "windows-11-ja-jp.iso"
+    assert "linkid=2334167" in client["iso_url"] and "clcid=0x411" in client["iso_url"]
+    assert client["unattend"] == "packer/windows-client/unattend-golden.xml"
+    assert (REPO / client["unattend"]).is_file()
+    server = next(i for i in m["images_needed"] if i.get("golden_file") == "win2025-golden-en-us.vhdx")
+    assert "unattend" not in server and "edition_match" not in server
+
+
+def test_windows_update_defaults_to_off():
+    m = build(REPO / "l2" / "ad-forest.yml")
+    assert all(v["windows_update"] is False for v in m["vms"])
+
+
+def test_windows_11_rejects_server_features():
+    with pytest.raises(resolve.ConfigError, match="features"):
+        _resolve_dict(_client_l2(features=["Web-Server"]))
+
+
+def test_windows_11_rejects_generation_1():
+    with pytest.raises(resolve.ConfigError, match="generation 2"):
+        _resolve_dict(_client_l2(generation=1))
+
+
+def test_windows_11_cannot_be_domain_controller():
+    l2 = _client_l2()
+    l2["defaults"]["os"] = "windows_11"
+    with pytest.raises(resolve.ConfigError, match="ドメインコントローラー"):
+        _resolve_dict(l2)

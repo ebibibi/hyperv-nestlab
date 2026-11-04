@@ -9,6 +9,7 @@
 l1_images_dir: "L:/images"
 images:
   windows_server_2025: "{{ l1_images_dir }}/win2025-golden.vhdx"
+  windows_11:          "{{ l1_images_dir }}/win11-golden-<lang>.vhdx"
   ubuntu_2404:         "{{ l1_images_dir }}/ubuntu2404-cloudimg.vhdx"
 
 # 注意: WinRM 接続変数 (ansible_user/password/transport 等) は all には置かない。

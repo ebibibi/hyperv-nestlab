@@ -1,0 +1,33 @@
+# Lab for testing Microsoft Entra hybrid join, including hybrid join using Entra Kerberos.
+#
+#   dc01  10.10.0.10  Windows Server 2025 domain controller
+#   pc01  10.10.0.21  Windows 11 domain member (vTPM)
+#   pc02  10.10.0.22  Windows 11 domain member (vTPM)
+#
+# Entra Kerberos needs recent builds (DC 26100.6905+, client 26100.6584+), so every guest takes
+# Windows Update. The Entra tenant and directory sync are configured after the lab is built.
+#
+# Note: dsrm_password belongs in a vault normally; a literal keeps this self-contained lab simple.
+defaults:
+  cpu: 2
+  memory_gb: 8
+  os: windows_server_2025
+  domain_join: corp.contoso.local
+  windows_update: true
+
+domain:
+  fqdn: corp.contoso.local
+  netbios: CORP
+  dsrm_password: "P@ssw0rd-DSRM-Lab!"
+  dns_forwarders: [1.1.1.1, 8.8.8.8]
+  controllers:
+    - { name: dc01, ip: 10.10.0.10 }
+
+groups:
+  - name: clients
+    name_prefix: pc
+    count: 2
+    ip_from: 10.10.0.21
+    os: windows_11
+    language: ja-jp
+    disk_gb: 80

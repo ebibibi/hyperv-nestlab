@@ -104,6 +104,9 @@ Connected なら **no-change**（別の接続先に繋がっていれば切断�
   - **Linux**: 単一 cloud image + cloud-init で `locale`（例 `ja_JP.UTF-8`）を設定。
   - 利用可能言語と LCID は `assets/images.yml` の `windows_languages.catalog` / `linux_locales`。
   - **L1（ホスト）は常に `en-us` 固定**（安定性優先・複雑化回避）。
+- `os: windows_11`: Windows 11 Enterprise 評価版（90 日）の L2。言語別 golden (`win11-golden-<lang>.vhdx`) を自動生成し、Secure Boot と vTPM を有効にする。
+  - `generation: 2` 必須。ドメインコントローラーと `features` には使えない（resolver が拒否）。
+- `windows_update: true`: 構成の最後に Windows Update を適用する（プレビュー更新は除く）。再起動を含むため時間がかかる。
 - スカラ／マップは **深いマージ**（deep merge）。
 - リスト（`disks` / `nics` / `roles`）は **置換**（より具体的な層が丸ごと上書き）。予測しやすさを優先。
 - `data_disks: {count, size_gb}` は糖衣。解決時に `disks:` の `role: data` 複数本へ展開される。`overrides` で `disks:` をフル明示した場合はそちらが優先（＝置換）。

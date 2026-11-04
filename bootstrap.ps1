@@ -295,7 +295,11 @@ foreach ($img in $needed) {
             Write-Host ("  -> Windows[{0}] {1} を整備" -f $img.language, $img.golden_file) -ForegroundColor DarkCyan
             & (Join-Path $RepoRoot "scripts\Get-WindowsIso.ps1") -RepoRoot $RepoRoot -Url $img.iso_url -IsoName $img.iso_name
             if ($LASTEXITCODE -ne 0) { Fail "Windows ISO ($($img.language)) の自動ダウンロードに失敗しました。" }
-            & (Join-Path $RepoRoot "scripts\Build-WindowsGoldenDism.ps1") -IsoName $img.iso_name -VhdxName $img.golden_file -AdminPassword $GoldenAdminPassword
+            $goldenArgs = @{ IsoName = $img.iso_name; VhdxName = $img.golden_file; AdminPassword = $GoldenAdminPassword }
+            if ($img.edition_match) { $goldenArgs.EditionPattern = $img.edition_match }
+            if ($img.unattend)      { $goldenArgs.UnattendPath = $img.unattend }
+            if ($img.disk_gb)       { $goldenArgs.DiskGB = [int]$img.disk_gb }
+            & (Join-Path $RepoRoot "scripts\Build-WindowsGoldenDism.ps1") @goldenArgs
             $rc = $LASTEXITCODE
             if ($rc -ne 0) { Fail "Windows golden ($($img.language)) のビルドに失敗しました (rc=$rc)。" }
         }
