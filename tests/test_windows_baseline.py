@@ -49,7 +49,7 @@ def test_golden_builder_falls_back_to_host_bcdboot():
 def test_windows_11_evaluation_is_activated_before_updates():
     tasks = (Path(__file__).resolve().parent.parent / "ansible" / "roles" / "l2_config" / "tasks" / "main.yml").read_text(encoding="utf-8")
     assert "/ato" in tasks
-    assert tasks.index("/ato") < tasks.index("win_updates")
+    assert tasks.index("/ato") < tasks.index("windows_update_round.yml")
 
 
 def test_winrm_is_not_left_on_delayed_start():
@@ -63,10 +63,11 @@ def test_bootstrap_runs_l2_config_for_windows_11_and_updates():
     assert "windows_update" in gate and "windows_11" in gate
 
 
-def test_windows_update_retries_after_reboot_failures():
-    tasks = (Path(__file__).resolve().parent.parent / "ansible" / "roles" / "l2_config" / "tasks" / "main.yml").read_text(encoding="utf-8")
-    section = tasks[tasks.index("win_updates"):tasks.index("適用した更新の件数")]
-    assert "until:" in section and "retries:" in section
+def test_windows_update_reboots_with_a_dedicated_task():
+    tasks_dir = Path(__file__).resolve().parent.parent / "ansible" / "roles" / "l2_config" / "tasks"
+    round_tasks = (tasks_dir / "windows_update_round.yml").read_text(encoding="utf-8")
+    assert "reboot: false" in round_tasks and "ansible.windows.win_reboot" in round_tasks
+    assert "until:" not in (tasks_dir / "main.yml").read_text(encoding="utf-8")
 
 
 def test_detached_bootstrap_handles_known_ssh_traps():

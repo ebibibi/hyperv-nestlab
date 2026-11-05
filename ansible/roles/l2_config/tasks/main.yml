@@ -41,24 +41,14 @@
   ansible.windows.win_reboot:
     reboot_timeout: 1200
 
+# Reboot with win_reboot rather than the reboot option of win_updates. That option loses the WinRM
+# connection through the L1 NAT and leaves a stale Kerberos context behind (KB/0034).
 - name: "Windows Update を適用 (windows_update: true)"
   when: windows_update | default(false) | bool
-  ansible.windows.win_updates:
-    category_names: [SecurityUpdates, CriticalUpdates, UpdateRollups, Updates]
-    reject_list: ['(?i)preview']
-    reboot: true
-    reboot_timeout: 3600
-  register: l2_updates
-  # The module can fail with "Connection refused" while the guest reboots through the L1 NAT, even
-  # though the updates were installed (KB/0034). A retry finds what is left and confirms the result.
-  until: l2_updates is succeeded and (l2_updates.failed_update_count | default(0)) == 0
-  retries: 5
-  delay: 180
-
-- name: "適用した更新の件数"
-  when: windows_update | default(false) | bool
-  ansible.builtin.debug:
-    msg: "{{ inventory_hostname }}: installed={{ l2_updates.installed_update_count | default(0) }} failed={{ l2_updates.failed_update_count | default(0) }}"
+  ansible.builtin.include_tasks: windows_update_round.yml
+  loop: [1, 2, 3, 4]
+  loop_control:
+    loop_var: update_round
 
 - name: "Claude Code stable を現在のドメイン管理者プロファイルへ導入"
   when: "'claude_code' in (applications | default([]))"

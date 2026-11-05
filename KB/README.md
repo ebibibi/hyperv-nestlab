@@ -53,4 +53,4 @@ Windows golden / S2D まわりの**汎用ノウハウ集**でもあります。
 | [0031](0031-capture-guest-screen-from-host.md) | ホストから L2 の画面を撮ると真っ黒 / L2 に届かない | 画面の消灯を仮想キーボードで起こす・WMI は VM を持つホスト(L1)で呼ぶ・RGB565 は LockBits で行コピー |
 | [0032](0032-image-bcdboot-fails-on-host.md) | Windows 11 イメージの bcdboot がホスト上で失敗する | イメージ側が失敗したらホスト側の bcdboot で構成する |
 | [0033](0033-windows-11-eval-activation-and-winrm.md) | Windows 11 評価版が 1 時間で落ち、WinRM にも届かない | 構成の最初に `slmgr /ato`、WinRM は遅延なしの自動起動にする |
-| [0034](0034-win-updates-connection-refused-on-reboot.md) | `win_updates` が再起動中の接続拒否で失敗する | 更新は適用済み。`until` で再試行して結果を確かめる |
+| [0034](0034-win-updates-connection-refused-on-reboot.md) | `win_updates` が再起動中に接続を失って失敗する | 更新は適用済み。`reboot: false` にして `win_reboot` で再起動する |
