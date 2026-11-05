@@ -44,7 +44,7 @@ DEFAULT_OS_DISK_GB = 80
 # language も継承対象 (L1.l2_defaults < L2.defaults < group < overrides)
 INHERITABLE = (
     "cpu", "memory_gb", "os", "generation", "domain_join", "disk_gb",
-    "language", "features", "applications", "arc", "dns",
+    "language", "features", "applications", "arc", "dns", "windows_update",
     "kerberos_client", "block_direct_kdc", "ntlm_audit", "kerberos_debug", "smb_share",
 )
 
@@ -61,6 +61,10 @@ ARC_AGENT_DEFAULTS = {
 }
 
 LINUX_RE = re.compile(r"ubuntu|debian|linux|rocky|alma", re.I)
+
+
+def is_windows_client_os(os_name):
+    return str(os_name or "").lower().startswith("windows_11")
 
 
 def is_linux_os(os_name):
@@ -165,6 +169,7 @@ def resolve(l1, l2):
     win_img = (imgcat.get("images", {}) or {}).get("win2025-golden", {}) or {}
     golden_pattern = win_img.get("golden_pattern", "win2025-golden-{lang}.vhdx")
     iso_pattern = win_img.get("iso_pattern", "windows-server-2025-{lang}.iso")
+    client_img = (imgcat.get("images", {}) or {}).get("win11-golden", {}) or {}
     linux_locales = imgcat.get("linux_locales", {}) or {}
     ubuntu_basename = "ubuntu2404-cloudimg.vhdx"
     L1_LANG = "en-us"   # ホスト(1段目)は安定性のため英語固定
@@ -290,6 +295,7 @@ def resolve(l1, l2):
         vm["block_direct_kdc"] = bool(vm.get("block_direct_kdc", False))
         vm["ntlm_audit"] = bool(vm.get("ntlm_audit", False))
         vm["kerberos_debug"] = bool(vm.get("kerberos_debug", False))
+        vm["windows_update"] = bool(vm.get("windows_update", False))
         if is_linux_os(vm.get("os")):
             vm["base_image_file"] = ubuntu_basename
             vm["locale"] = linux_locales.get(lang, "en_US.UTF-8")
@@ -300,7 +306,23 @@ def resolve(l1, l2):
                     f"利用可能: {', '.join(sorted(win_catalog.keys()))} "
                     f"(assets/images.yml の windows_languages.catalog に追加可)"
                 )
-            vm["base_image_file"] = golden_pattern.format(lang=lang)
+            pattern = golden_pattern
+            if is_windows_client_os(vm.get("os")):
+                if vm.get("features"):
+                    raise ConfigError(
+                        f"VM '{vm.get('name')}': features は Windows Server 専用です (win_feature)。"
+                        f"windows_11 には指定できません。"
+                    )
+                if vm.get("generation", 2) != 2:
+                    raise ConfigError(f"VM '{vm.get('name')}': windows_11 は generation 2 が必須です。")
+                pattern = client_img["golden_pattern"]
+            vm["base_image_file"] = pattern.format(lang=lang)
+
+    if domain:
+        controllers = {c["name"] for c in domain.get("controllers", [])}
+        for vm in vms:
+            if vm.get("name") in controllers and is_windows_client_os(vm.get("os")):
+                raise ConfigError(f"VM '{vm.get('name')}': ドメインコントローラーに windows_11 は使えません。")
 
     # L1 performs the first stage of double NAT for transparent L2 internet access.
     # Give every L2 VM a deterministic inbound management port on the L1 uplink so the
@@ -314,20 +336,30 @@ def resolve(l1, l2):
     # --- 整備が必要なイメージ集合 (bootstrap が DL/ビルドする) ---
     needed = {}
 
-    def add_win(lang):
+    def add_win(lang, client=False):
         if lang not in win_catalog:
             raise ConfigError(f"language '{lang}' は未対応です。利用可能: {', '.join(sorted(win_catalog.keys()))}")
-        if ("windows", lang) in needed:
+        key = ("windows-client" if client else "windows", lang)
+        if key in needed:
             return
         c = win_catalog[lang]
-        needed[("windows", lang)] = {
+        image = {
             "kind": "windows",
             "language": lang,
             "label": c.get("label", lang),
-            "golden_file": golden_pattern.format(lang=lang),
-            "iso_name": iso_pattern.format(lang=lang),
-            "iso_url": fwlink.format(clcid=c["clcid"], culture=c["culture"], country=c["country"]),
+            "golden_file": (client_img["golden_pattern"] if client else golden_pattern).format(lang=lang),
+            "iso_name": (client_img["iso_pattern"] if client else iso_pattern).format(lang=lang),
+            "iso_url": (client_img["fwlink"] if client else fwlink).format(
+                clcid=c["clcid"], culture=c["culture"], country=c["country"]
+            ),
         }
+        if client:
+            image.update(
+                edition_match=client_img["edition_match"],
+                unattend=client_img["unattend"],
+                disk_gb=client_img["disk_gb"],
+            )
+        needed[key] = image
 
     add_win(L1_LANG)   # L1(ホスト)は常に en-us
     linux_needed = False
@@ -335,7 +367,7 @@ def resolve(l1, l2):
         if is_linux_os(vm.get("os")):
             linux_needed = True
         else:
-            add_win(vm.get("language") or default_lang)
+            add_win(vm.get("language") or default_lang, is_windows_client_os(vm.get("os")))
     images_needed = list(needed.values())
     if linux_needed:
         images_needed.append({"kind": "linux", "vhdx": ubuntu_basename})

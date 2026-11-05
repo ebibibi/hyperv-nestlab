@@ -30,6 +30,11 @@ Warning: Permanently added '10.20.0.10' (ED25519) to the list of known hosts.
 
 ## 対策
 
+**`scripts/Start-LabBootstrap.ps1` を使う。** 下の対策をまとめたもので、`build\bootstrap.status` の
+`EXITCODE=` と `DONE` で結果を確認できる。手で同じことを組むと踏み直す（`*>>` だけのラッパーで再発した）。
+
+以下は、このスクリプトの中身の説明。
+
 **ラッパースクリプトを 1 枚置き、タスクスケジューラから実行ユーザーで流す。**
 
 ```powershell

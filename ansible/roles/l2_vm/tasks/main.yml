@@ -63,6 +63,11 @@
               if ($isLinux) { Set-VMFirmware -VMName $Name -SecureBootTemplate MicrosoftUEFICertificateAuthority }
               else          { Set-VMFirmware -VMName $Name -SecureBootTemplate MicrosoftWindows }
             }
+            # Windows 11 uses a vTPM for device keys. A local key protector needs no guarded fabric.
+            if ($Os -match '^windows_11') {
+              Set-VMKeyProtector -VMName $Name -NewLocalKeyProtector
+              Enable-VMTPM -VMName $Name
+            }
             $Ansible.Changed = $true
           }
         parameters:

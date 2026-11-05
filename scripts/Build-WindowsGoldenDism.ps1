@@ -29,6 +29,8 @@ param(
     [string]$IsoName,                                   # 言語別 ISO を明示指定する場合のファイル名
     [string]$AdminPassword = "P@ssw0rd-Lab-Change!",
     [string]$Edition = "Windows Server 2025 Datacenter Evaluation (デスクトップ エクスペリエンス)",
+    [string]$EditionPattern,                            # Regex for the edition. Takes precedence over the Server selection.
+    [string]$UnattendPath,                              # Repository-relative answer file. Defaults to the Server one.
     [int]$DiskGB = 40
 )
 $ErrorActionPreference = "Stop"
@@ -77,7 +79,13 @@ try {
     # (英語 ISO/日本語 ISO のどちらでも golden を作れるようにする)。
     # Datacenter は Standard 上位互換で S2D に必須。
     $imgs = Get-WindowsImage -ImagePath $wim
-    $sel = $imgs | Where-Object { $_.ImageName -eq $Edition } | Select-Object -First 1
+    $sel = $null
+    if ($EditionPattern) {
+        # Exclude the N editions, which lack media components, unless the pattern asks for them.
+        $sel = $imgs | Where-Object { $_.ImageName -match $EditionPattern -and $_.ImageName -notmatch '(?i)\sN(\s|$)' } | Select-Object -First 1
+        if (-not $sel) { throw "'$EditionPattern' に一致するエディションがありません。利用可能: $(($imgs | ForEach-Object { $_.ImageName }) -join ' | ')" }
+    }
+    if (-not $sel) { $sel = $imgs | Where-Object { $_.ImageName -eq $Edition } | Select-Object -First 1 }
     if (-not $sel) { $sel = $imgs | Where-Object { $_.ImageName -match '(?i)datacenter' -and $_.ImageName -match '(?i)eval' -and $_.ImageName -match '(?i)desktop|デスクトップ' } | Select-Object -First 1 }
     if (-not $sel) { $sel = $imgs | Where-Object { $_.ImageName -match '(?i)datacenter' -and $_.ImageName -match '(?i)eval' } | Select-Object -First 1 }
     # 最後の保険: Datacenter が無ければ Standard デスクトップ (S2D は不可だが他は動く)
@@ -112,11 +120,16 @@ try {
 
     # --- UEFI ブート構成 ---
     Log "bcdboot で UEFI ブート構成"
-    & "W:\Windows\System32\bcdboot.exe" W:\Windows /s S: /f UEFI
-    if ($LASTEXITCODE -ne 0) { throw "bcdboot に失敗しました。" }
+    # イメージ側の bcdboot がホスト上で起動できない版がある (KB/0032)。その場合はホスト側で構成する。
+    $bootOut = & "W:\Windows\System32\bcdboot.exe" W:\Windows /s S: /f UEFI 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Log ("イメージ側の bcdboot が失敗 (rc={0})。ホスト側の bcdboot で再試行します" -f $LASTEXITCODE)
+        $bootOut = & "$env:SystemRoot\System32\bcdboot.exe" W:\Windows /s S: /f UEFI 2>&1
+        if ($LASTEXITCODE -ne 0) { throw "bcdboot に失敗しました (rc=$LASTEXITCODE): $($bootOut -join ' ')" }
+    }
 
     # --- unattend 配置 (OOBE 無人 + WinRM) ---
-    $unattendSrc = Join-Path $RepoRoot "packer\windows-server\unattend-golden.xml"
+    $unattendSrc = if ($UnattendPath) { Join-Path $RepoRoot $UnattendPath } else { Join-Path $RepoRoot "packer\windows-server\unattend-golden.xml" }
     $content = (Get-Content $unattendSrc -Raw) -replace "\{\{ADMIN_PASSWORD\}\}", $AdminPassword
     New-Item -ItemType Directory -Force -Path "W:\Windows\Panther" | Out-Null
     [System.IO.File]::WriteAllText("W:\Windows\Panther\unattend.xml", $content, (New-Object Text.UTF8Encoding($false)))

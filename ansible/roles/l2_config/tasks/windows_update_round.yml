@@ -1,0 +1,35 @@
+---
+# One round of Windows Update. Some updates only appear after the previous ones and a reboot.
+# TrustedInstaller may reboot the guest again after win_reboot has seen it come back, so losing the
+# connection here is expected. The next round continues once the guest is reachable (KB/0034).
+- name: "Windows Update (ラウンド {{ update_round }})"
+  when: not (l2_updates_finished | default(false))
+  block:
+    - name: "Windows Update を適用 (ラウンド {{ update_round }})"
+      ansible.windows.win_updates:
+        category_names: [SecurityUpdates, CriticalUpdates, UpdateRollups, Updates]
+        reject_list: ['(?i)preview']
+        reboot: false
+      register: l2_updates
+
+    - name: "更新で再起動が必要なら再起動 (ラウンド {{ update_round }})"
+      when: l2_updates.reboot_required | default(false)
+      ansible.windows.win_reboot:
+        reboot_timeout: 3600
+
+    - name: "適用した更新の件数 (ラウンド {{ update_round }})"
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }}: found={{ l2_updates.found_update_count | default(0) }} installed={{ l2_updates.installed_update_count | default(0) }} failed={{ l2_updates.failed_update_count | default(0) }}"
+
+    - name: "残りの更新が無ければ終了 (ラウンド {{ update_round }})"
+      when: (l2_updates.found_update_count | default(0)) == 0
+      ansible.builtin.set_fact:
+        l2_updates_finished: true
+  rescue:
+    - name: "接続を作り直す (ラウンド {{ update_round }})"
+      ansible.builtin.meta: reset_connection
+
+    - name: "ゲストの復帰を待つ (ラウンド {{ update_round }})"
+      ansible.builtin.wait_for_connection:
+        delay: 180
+        timeout: 1800

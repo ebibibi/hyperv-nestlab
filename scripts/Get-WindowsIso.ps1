@@ -62,7 +62,7 @@ if (Test-Path $dest) {
 $tmp  = "$dest.downloading"
 if (Test-Path $tmp) { Remove-Item $tmp -Force -ErrorAction SilentlyContinue }
 
-Log "Windows Server 2025 評価版 ISO を直接ダウンロード中 (約7-8GB / フォーム不要)..."
+Log "Windows 評価版 ISO を直接ダウンロード中 ($IsoName / 約7-8GB / フォーム不要)..."
 Log "  URL: $Url"
 try {
     Start-BitsTransfer -Source $Url -Destination $tmp -ErrorAction Stop

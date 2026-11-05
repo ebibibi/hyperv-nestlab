@@ -43,6 +43,17 @@ images:
     builder: "Build-WindowsGoldenDism.ps1 (DISM 標準ツール / oscdimg 不要)"
     # エディションは言語非依存で自動選択 (Standard + Evaluation + Desktop Experience)。
 
+  # `os: windows_11` の L2 の土台。評価版 ISO (90 日) を直リンクで取得し、同じ DISM ビルダーで生成する。
+  win11-golden:
+    kind: windows-golden
+    golden_pattern: "win11-golden-{lang}.vhdx"
+    iso_pattern: "windows-11-{lang}.iso"
+    fwlink: "https://go.microsoft.com/fwlink/?linkid=2334167&clcid={clcid}&culture={culture}&country={country}"
+    edition_match: "(?i)enterprise"
+    unattend: "packer/windows-client/unattend-golden.xml"
+    disk_gb: 80
+    generation: 2
+
 # ---- Windows 言語カタログ ----
 # L2(ゲスト)の言語を YAML の `language:` で選ぶと、対応する ISO を自動 DL し
 # その言語の golden を作る。L1(ホスト/1段目)は安定性のため常に en-us 固定。

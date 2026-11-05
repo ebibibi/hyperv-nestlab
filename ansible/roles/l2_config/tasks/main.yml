@@ -10,6 +10,24 @@
 #   applications: [claude_code, microsoft_word]
 # と書けば、対応するアプリを存在確認付きで冪等導入する。
 
+# The evaluation edition is not activated by itself in time: once the grace period ends, wlms.exe
+# shuts the guest down every hour (KB/0033). Activate before anything long-running such as updates.
+- name: "Windows 11 評価版をライセンス認証"
+  when: (os | default('')) is match('^windows_11')
+  ansible.windows.win_powershell:
+    error_action: stop
+    script: |
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      function Get-LicenseStatus {
+        (Get-CimInstance SoftwareLicensingProduct -Filter "PartialProductKey IS NOT NULL AND Name LIKE 'Windows%'" |
+          Select-Object -First 1).LicenseStatus
+      }
+      if ((Get-LicenseStatus) -eq 1) { return }
+      $output = & cscript.exe //nologo "$env:SystemRoot\System32\slmgr.vbs" /ato | Out-String
+      if ((Get-LicenseStatus) -ne 1) { throw "Windows activation failed: $output" }
+      $Ansible.Changed = $true
+
 - name: "L2 機能の導入: {{ (features | default([])) | join(', ') }}"
   when: (features | default([])) | length > 0
   ansible.windows.win_feature:
@@ -22,6 +40,21 @@
   when: (l2_feat is defined) and (l2_feat.reboot_required | default(false))
   ansible.windows.win_reboot:
     reboot_timeout: 1200
+
+# Reboot with win_reboot rather than the reboot option of win_updates. That option loses the WinRM
+# connection through the L1 NAT and leaves a stale Kerberos context behind (KB/0034).
+- name: "Windows Update を適用 (windows_update: true)"
+  when: windows_update | default(false) | bool
+  ansible.builtin.include_tasks: windows_update_round.yml
+  loop: [1, 2, 3, 4, 5, 6]
+  loop_control:
+    loop_var: update_round
+
+- name: "Windows Update が完了したことを確認"
+  when: windows_update | default(false) | bool
+  ansible.builtin.assert:
+    that: l2_updates_finished | default(false) | bool
+    fail_msg: "{{ inventory_hostname }}: Windows Update did not finish. Updates remain, failed, or the guest stayed unreachable."
 
 - name: "Claude Code stable を現在のドメイン管理者プロファイルへ導入"
   when: "'claude_code' in (applications | default([]))"
