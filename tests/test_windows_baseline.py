@@ -68,6 +68,8 @@ def test_windows_update_reboots_with_a_dedicated_task():
     round_tasks = (tasks_dir / "windows_update_round.yml").read_text(encoding="utf-8")
     assert "reboot: false" in round_tasks and "ansible.windows.win_reboot" in round_tasks
     assert "until:" not in (tasks_dir / "main.yml").read_text(encoding="utf-8")
+    assert "rescue:" in round_tasks and "wait_for_connection" in round_tasks
+    assert "l2_updates_finished | default(false) | bool" in (tasks_dir / "main.yml").read_text(encoding="utf-8")
 
 
 def test_detached_bootstrap_handles_known_ssh_traps():

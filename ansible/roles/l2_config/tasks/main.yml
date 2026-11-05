@@ -46,9 +46,15 @@
 - name: "Windows Update を適用 (windows_update: true)"
   when: windows_update | default(false) | bool
   ansible.builtin.include_tasks: windows_update_round.yml
-  loop: [1, 2, 3, 4]
+  loop: [1, 2, 3, 4, 5, 6]
   loop_control:
     loop_var: update_round
+
+- name: "Windows Update が完了したことを確認"
+  when: windows_update | default(false) | bool
+  ansible.builtin.assert:
+    that: l2_updates_finished | default(false) | bool
+    fail_msg: "{{ inventory_hostname }}: Windows Update did not finish. Updates remain, failed, or the guest stayed unreachable."
 
 - name: "Claude Code stable を現在のドメイン管理者プロファイルへ導入"
   when: "'claude_code' in (applications | default([]))"

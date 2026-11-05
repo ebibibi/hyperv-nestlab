@@ -19,19 +19,23 @@ kerberos.GSSError: (('No context has been established', 524288), ('Attempt to us
 
 ## 原因
 
-`win_updates` の `reboot: true` で再起動すると、L2 へ L1 の NAT 越しに接続している WinRM が切れる。
-そのあと同じタスクの再試行は切断前の Kerberos コンテキストを持ち越すらしく、回復しない
-(再試行の間にゲストは正常に戻っている。プラグインの内部までは確認していない)。
+更新の適用後、ゲストは 1 回では終わらず再起動を繰り返す。実機の System ログ (1074) では、
+`shutdown.exe` の再起動の約 8 分後と約 12 分後に、`TrustedInstaller.exe` がさらに再起動していた。
+途中で WinRM が一度上がるので、再起動の完了待ちを抜けたあとに次の再起動で接続を失う。
 
 ## 対策
 
-`ansible/roles/l2_config/tasks/windows_update_round.yml` で次を最大 4 ラウンド繰り返す。
+`ansible/roles/l2_config/tasks/windows_update_round.yml` で次を最大 6 ラウンド繰り返す。
 
 1. `win_updates` を `reboot: false` で実行する
 2. 再起動が必要なら `ansible.windows.win_reboot` で再起動する
 3. 見つかった更新が 0 件になったら終える
+4. 途中で接続を失ったら `rescue` で接続を作り直し、ゲストの復帰を待って次のラウンドへ進む
+
+全ラウンドで終わらなければ、`main.yml` の `assert` で失敗させる。
 
 ## 教訓 / 汎用ノウハウ
 
-- 再起動を含む処理を `until` で包んでも、接続の状態は作り直されない。再起動は専用のタスクに任せる。
+- `win_reboot` の成功は「再起動が全部終わった」ことを意味しない。更新後は追加の再起動を前提にする。
+- 再起動を含む処理を `until` で包んでも、接続の状態は作り直されない。
 - 失敗と表示されても、再起動を含む処理は実体を確認する。逆に、成功と表示されても実体は確認する。
