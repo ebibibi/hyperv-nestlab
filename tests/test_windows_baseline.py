@@ -67,3 +67,12 @@ def test_windows_update_retries_after_reboot_failures():
     tasks = (Path(__file__).resolve().parent.parent / "ansible" / "roles" / "l2_config" / "tasks" / "main.yml").read_text(encoding="utf-8")
     section = tasks[tasks.index("win_updates"):tasks.index("適用した更新の件数")]
     assert "until:" in section and "retries:" in section
+
+
+def test_detached_bootstrap_handles_known_ssh_traps():
+    script = (Path(__file__).resolve().parent.parent / "scripts" / "Start-LabBootstrap.ps1").read_text(encoding="utf-8")
+    assert "-RedirectStandardInput" in script  # ssh waits on an inherited stdin otherwise
+    assert "-LogonType S4U" in script  # survives the SSH session ending
+    assert "PythonDir" in script  # a scheduled task cannot see a per-user Python
+    finally_block = script[script.index("finally {"):]
+    assert "EXITCODE=" in finally_block and "DONE" in finally_block
